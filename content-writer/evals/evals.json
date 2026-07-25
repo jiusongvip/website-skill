@@ -1,0 +1,23 @@
+{
+  "skill_name": "content-writer",
+  "evals": [
+    {
+      "id": 0,
+      "name": "fill-pillar-page",
+      "prompt": "I need to fill the /chinese-massage/ pillar page with real content. Here's the page definition from the PRD:\n\nTitle: \"What Is Chinese Massage? A Complete Guide\"\nTemplate type: Pillar/Guide\nPrimary keyword: \"chinese massage\" (volume 22,200/mo, KD 38)\nSecondary keywords: \"what is chinese massage\", \"chinese massage therapy\", \"tui na\"\nH2 skeleton:\n- What Is Chinese Massage?\n- Key Benefits\n- Techniques & Methods\n- What to Expect During a Session\n- Chinese Massage vs Swedish Massage\n- Who Is It For?\n- Frequently Asked Questions\n- Find a Practitioner Near You\nTarget audience: People researching Chinese massage for therapeutic benefits, comparing it to other modalities, or considering their first session.\nInternal links to include: /chinese-massage/techniques/, /chinese-massage/benefits/, /chinese-massage/vs-swedish/, /tuina-massage/, /traditional-chinese-medicine-massage/\n\nPlease write the full content for this page as structured markdown.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "write-blog-post",
+      "prompt": "Write a blog post for the China Massage Guide blog (/blog/). Here's the topic brief:\n\nTitle: \"Chinese Foot Massage vs Reflexology: Differences, Techniques, and Benefits\"\nCategory: Comparisons\nPrimary keyword: \"chinese foot massage vs reflexology\"\nTarget reader: Someone deciding between Chinese foot massage and reflexology for foot pain or relaxation\nKey question to answer: \"What's the difference and which should I choose?\"\nTone: Informational, helpful, comparison-focused\n\nPlease write the full blog post as structured markdown.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "fill-comparison-page",
+      "prompt": "I need to fill the /chinese-massage/vs-swedish/ comparison page with real content. Here's the page definition:\n\nTitle: \"Chinese Massage vs Swedish Massage: Key Differences & Which Is Right for You\"\nTemplate type: Comparison\nPrimary keyword: \"chinese massage vs swedish\"\nH2 skeleton:\n- At a Glance\n- Chinese Massage Overview\n- Swedish Massage Overview\n- Head-to-Head Comparison\n- Pros & Cons\n- Which Should You Choose?\n- Frequently Asked Questions\nTarget audience: People choosing between Chinese massage and Swedish massage for relaxation, pain relief, or therapy.\nInternal links: /chinese-massage/, /chinese-massage/benefits/\n\nPlease write the full comparison content as structured markdown.",
+      "files": []
+    }
+  ]
+}

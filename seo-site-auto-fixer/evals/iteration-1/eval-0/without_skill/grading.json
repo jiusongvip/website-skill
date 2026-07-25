@@ -1,0 +1,36 @@
+{
+  "eval_id": 0,
+  "run_type": "without_skill",
+  "assertions": [
+    {
+      "text": "missing-about-page-created",
+      "passed": true,
+      "evidence": "src/pages/about.astro created"
+    },
+    {
+      "text": "rss-feed-created",
+      "passed": true,
+      "evidence": "src/pages/rss.xml.js created"
+    },
+    {
+      "text": "rss-link-in-head",
+      "passed": true,
+      "evidence": "RSS link added to BaseLayout.astro <head>"
+    },
+    {
+      "text": "howto-schema-on-techniques",
+      "passed": true,
+      "evidence": "HowTo JSON-LD added to techniques page index.astro"
+    },
+    {
+      "text": "build-passes",
+      "passed": true,
+      "evidence": "astro build passed: 17 pages, 2.06s"
+    },
+    {
+      "text": "fix-report-generated",
+      "passed": true,
+      "evidence": "fix-report.md generated"
+    }
+  ]
+}

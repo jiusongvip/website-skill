@@ -1,0 +1,17 @@
+{
+  "skill_name": "seo-site-analyzer",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "请分析关键词 china massage 的 SEO 机会。附带了 SEMrush 数据文件：新词_China massage.csv。目标市场 US，内容站类型。",
+      "expected_output": "china-massage-analysis.md with all 11 sections, including filtered explicit terms, local/general split, hybrid site type, and decision matrix",
+      "files": ["D:\\workspace\\website\\新词_China massage.csv"]
+    },
+    {
+      "id": 1,
+      "prompt": "分析关键词 chinese herbal tea 的 SEO 站点结构。数据来自 SEMrush：新词_chinese herbal tea.csv。做一个内容站。",
+      "expected_output": "chinese-herbal-tea-analysis.md with all 11 sections, including niche authority strategy, low-KD opportunity analysis, and full cluster structure from small dataset",
+      "files": ["D:\\workspace\\website\\新词_chinese herbal tea.csv"]
+    }
+  ]
+}

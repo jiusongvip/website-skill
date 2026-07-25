@@ -1,0 +1,36 @@
+{
+  "eval_id": 0,
+  "run_type": "with_skill",
+  "assertions": [
+    {
+      "text": "missing-about-page-created",
+      "passed": true,
+      "evidence": "src/pages/about.astro created with author bio, credentials, mission statement"
+    },
+    {
+      "text": "rss-feed-created",
+      "passed": true,
+      "evidence": "src/pages/rss.xml.js created with blog content collection"
+    },
+    {
+      "text": "rss-link-in-head",
+      "passed": true,
+      "evidence": "BaseLayout.astro line 57: <link rel=\"alternate\" type=\"application/rss+xml\"...>"
+    },
+    {
+      "text": "howto-schema-on-techniques",
+      "passed": true,
+      "evidence": "techniques/index.astro updated with howToSteps prop, HowTo type added to SEO component"
+    },
+    {
+      "text": "build-passes",
+      "passed": true,
+      "evidence": "astro build passed: 17 pages, 2.05s"
+    },
+    {
+      "text": "fix-report-generated",
+      "passed": true,
+      "evidence": "fix-report.md generated with summary, fixed/skipped/failed items"
+    }
+  ]
+}

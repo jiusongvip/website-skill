@@ -1,0 +1,12 @@
+{
+  "skill_name": "seo-site-auto-fixer",
+  "evals": [
+    {
+      "id": 0,
+      "name": "auto-fix-china-massage",
+      "prompt": "Read the verification report at D:\\workspace\\website\\.agents\\seo-site-auto-fixer\\evals\\iteration-1\\eval-0\\verification-report.md. Then fix ALL Must Fix and Should Fix issues in the Astro project at D:\\workspace\\website\\china-massage\\. Apply the fixes to the actual source files. After fixing, run `cd D:\\workspace\\website\\china-massage; npx astro build` to verify. Output a fix-report.md with what was fixed, skipped, and the build result.",
+      "files": [],
+      "expected_output": "Fix report with all issues resolved, build passes"
+    }
+  ]
+}

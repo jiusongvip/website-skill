@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://chinamassageguide.com/sitemap-index.xml
