@@ -1,0 +1,3 @@
+display_name: 关键词建站框架
+short_description: 给一个关键词，输出建站方案和SEO规划，不含流量和变现
+default_prompt: 我有一个关键词，帮我规划针对这个词的建站方案。
