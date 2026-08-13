@@ -1,0 +1,10 @@
+# Google Cloud 服务账号密钥（含私钥，严禁提交）
+service_account.json
+gsc-auto-report/service_account.json
+
+# GSC 报告输出目录
+gsc-auto-report/gsc_reports/
+
+# Python 缓存
+__pycache__/
+*.pyc
