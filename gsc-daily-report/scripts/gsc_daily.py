@@ -15,6 +15,10 @@ import sys
 import time
 from datetime import datetime, timedelta
 
+# 强制 UTF-8 输出，避免 Windows GBK 控制台下 emoji 崩溃
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 import httpx
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
@@ -23,9 +27,12 @@ from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 # ── 路径配置 ────────────────────────────────────────────
+# 数据目录（凭证 + 报告）：环境变量 GSC_DATA_DIR 优先，默认为 skill 根目录（脚本上一级）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SERVICE_ACCOUNT_FILE = os.path.join(SCRIPT_DIR, "service_account.json")
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "gsc_reports")
+SKILL_ROOT = os.path.dirname(SCRIPT_DIR)
+DATA_DIR = os.environ.get("GSC_DATA_DIR", SKILL_ROOT)
+SERVICE_ACCOUNT_FILE = os.path.join(DATA_DIR, "service_account.json")
+OUTPUT_DIR = os.path.join(DATA_DIR, "gsc_reports")
 
 # ── 代理配置 ────────────────────────────────────────────
 PROXY = os.environ.get("HTTPS_PROXY", os.environ.get("HTTP_PROXY", "http://127.0.0.1:7897"))
