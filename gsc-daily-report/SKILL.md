@@ -33,7 +33,10 @@ description: 自动运行 GSC 站点效果统计脚本，拉取所有已授权 G
 
 ## 输出
 
-报告输出目录由脚本内 `DATA_DIR` 配置（环境变量 `GSC_DATA_DIR` 可覆盖），默认为本 skill 目录下的 `gsc_reports/`，文件名 `gsc_report_YYYYMMDD_HHMM.xlsx`，包含 4 个工作表：
+报告输出目录由脚本内 `DATA_DIR` 配置（环境变量 `GSC_DATA_DIR` 可覆盖），默认为本 skill 目录下的 `gsc_reports/`：
+
+- `index.html`：**固定文件名，覆盖式**，单页 HTML 图表（每个站点一张近 7 天折线图，展示左轴紫色、点击右轴蓝色，双 Y 轴，风格同 GSC 官方图表），供线上访问。图表依赖 Google Charts CDN（`gstatic.com/charts/loader.js`），浏览器需联网打开。
+- `report.xlsx`：**固定文件名，覆盖式**，多工作表 Excel（页面右上角「下载详细表格数据」按钮指向它），含 4 个工作表：
 
 | 工作表 | 内容 |
 |--------|------|
@@ -42,13 +45,15 @@ description: 自动运行 GSC 站点效果统计脚本，拉取所有已授权 G
 | 近30天 | 近一月汇总 |
 | 明细-近7天 | 查询词 / 页面 / 设备 / 国家 |
 
+- `gsc_report_YYYYMMDD_HHMM.xlsx`：带时间戳的历史存档，每次运行保留一份，不覆盖。
+
 ## 运行后如何汇报
 
 脚本控制台已打印完整汇总。向用户汇报：
 
 1. 站点总数、近 7 天总点击 / 总展示
 2. 点击排名前 5 的站点（点击 / 展示 / CTR / 均位）
-3. 报告文件路径（Markdown 链接）
+3. Excel 报告路径 + HTML 图表页面路径（Markdown 链接）
 4. 如有 ERROR 状态的站点，提示重跑可补上（脚本内置重试机制）
 
 ## 站点数量是动态的（重要）
@@ -58,6 +63,22 @@ description: 自动运行 GSC 站点效果统计脚本，拉取所有已授权 G
 1. 只需在 GSC 后台把服务账号邮箱 `jiusongvip@jiusong-505309.iam.gserviceaccount.com` 加到新站点的「用户和权限」里
 2. 下次运行脚本自动纳入，**无需修改脚本或 skill**
 3. 汇报时以脚本实际输出的站点总数为准，不要假设固定数量
+
+## 部署到服务器（宝塔）
+
+1. 把整个 skill 目录（含 `scripts/` 和 `service_account.json`）上传到服务器，如 `/www/wwwroot/gsc-report/`
+2. 安装依赖：`pip install httpx google-auth openpyxl`
+3. 宝塔创建网站，站点目录指向 `/www/wwwroot/gsc-report/gsc_reports/`
+4. 宝塔「计划任务」新增 Shell 脚本，每天定时执行：
+
+```bash
+cd /www/wwwroot/gsc-report
+export PYTHONIOENCODING=utf-8
+export HTTPS_PROXY=http://127.0.0.1:7897   # 服务器需代理访问 Google 时才设置，海外服务器可省略
+python3 scripts/gsc_daily.py >> gsc.log 2>&1
+```
+
+5. 每次运行后 `index.html` 与 `report.xlsx` 自动覆盖更新，线上即最新数据
 
 ## 注意事项
 
