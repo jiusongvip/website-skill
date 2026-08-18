@@ -24,8 +24,10 @@ metadata:
 ### Step 0：声明变量
 
 ```bash
-BASE="https://{用户提供的域名}"
+BASE="https://www.{用户提供的域名}"
 ```
+
+> **域名规范（重要）：** 所有站点统一使用带 `www` 前缀的正式域名；裸域名 `https://{域名}` 必须 301 跳转到 `https://www.{域名}`。因此 BASE 一律使用 www 域名。
 
 所有后续 curl 命令基于此 BASE URL。命令中的具体路径（如 /{list}、/{section}、/locale-path 等）需根据目标网站实际结构调整。
 
@@ -198,11 +200,11 @@ done
 - {locale} 首页 + 关键页：{} / 7 ✅/❌
 - Canonical 尾斜杠：{} 个页面有尾斜杠 (预期 0) ✅/❌
 
-**重定向链路：**
+**重定向链路（统一跳转到 www）：**
 - http://example.com → {} ({301|302}) ✅/❌
 - http://www.example.com → {} ({301|302|502|连接失败}) ✅/❌
-- https://www.example.com → {} ({301|302|502|连接失败}) ✅/❌
-- https://example.com → {} ({301|302}) ✅/❌
+- https://example.com → {} ({301|302}) ✅/❌  （裸域必须 301 → https://www.example.com）
+- https://www.example.com → {} ({200}) ✅/❌  （最终目标，应直接 200）
 
 **内页抽样：**
 - 抽样页面 1：title {} chars ✅/❌, desc {} chars ✅/❌, H1 ✅/❌, canonical ✅/❌
@@ -312,7 +314,7 @@ curl -sLo /dev/null -w "%{http_code}" "$BASE/{section}/"
 | "已发现 — 尚未编入索引" | 分页链接如 `/{list}/10/` 带 `/`，Google 抓到但未索引 | `trailingSlash: 'never'` | 部署后重新抓取 |
 | "未找到 (404)" | `/{example-double-prefix-url}` 等双 locale 前缀 — 历史构建 bug，当前构建不产出 | 确认当前不产出，历史 404 自然消退 | 部署后 GSC 验证修复 |
 | "未找到 (404)" | `/{list}/xxx/` 尾部斜杠导致 404 | `trailingSlash: 'never'` | 部署后重新抓取 |
-| "网页会自动重定向" | `http://` / `example.com` 跳转到 `https://{用户提供的域名}` — 正常 Nginx 行为 | 确认是 301 非 302 | 无需修复 |
+| "网页会自动重定向" | `http://` / `example.com` 跳转到 `https://www.{用户提供的域名}` — 正常裸域跳 www 行为 | 确认是 301 非 302 | 无需修复 |
 
 **检查命令：**
 
@@ -395,17 +397,17 @@ done
 
 ### Step 9：重定向链路检查
 
-验证 HTTP → HTTPS 和 www → 裸域 的 301 重定向正确，且为重定向直链（非多次跳转）。
+验证 HTTP → HTTPS 与「裸域 → www」的 301 重定向正确，且为重定向直链（非多次跳转）。**规范：所有站点以 `https://www.{域名}` 为最终正式域名，裸域一律 301 跳转到 www。**
 
 **已知正常模式：**
-- `http://example.com` → 301 → `https://{用户提供的域名}`（理想：一跳直达，非两跳 `http://example.com` → `https://example.com` → `https://{用户提供的域名}`）
-- `http://www.example.com` → 301 → `https://{用户提供的域名}`
-- `https://www.example.com` → 301 → `https://{用户提供的域名}`
-- `https://example.com` → 301 → `https://{用户提供的域名}`
+- `http://example.com` → 301 → `https://www.{用户提供的域名}`（理想：一跳直达，非两跳 `http://example.com` → `https://example.com` → `https://www.{用户提供的域名}`）
+- `http://www.example.com` → 301 → `https://www.{用户提供的域名}`
+- `https://example.com` → 301 → `https://www.{用户提供的域名}`（裸域必须 301 跳 www）
+- `https://www.example.com` → 200（最终目标，直接返回内容，不再跳转）
 
-**www 子域可达性检查（新增）：**
+**裸域跳 www 检查：**
 
-如果 www 子域返回 502 或无法访问，说明 Cloudflare Pages 未配置 www 自定义域。必须在 Cloudflare Pages 自定义域设置中添加 www 子域，Cloudflare 会自动处理 DNS、SSL 和 301 重定向。
+`https://example.com` 必须 301 跳转到 `https://www.example.com`。若裸域直接返回 200 或未跳转到 www，说明未配置裸域 301。需在 Cloudflare 为裸域名配置 301 重定向到 www（并确保 www 子域已添加 A/AAAA 或 CNAME 记录）。
 
 "网页会自动重定向"出现在 GSC 是正常现象，不需修复。但必须确认是 301（非 302），否则不传递 SEO 权重。
 
@@ -434,8 +436,9 @@ curl -sI https://www.example.com/ | head -5
 
 # 期望：
 # - 所有重定向为 301（非 302）
-# - 最终目标均为 https://{用户提供的域名}/
-# - www 子域必须可达（返回 301 或 200），不能是 502 或连接失败
+# - 最终目标均为 https://www.{用户提供的域名}/
+# - 裸域 https://example.com 必须 301 → https://www.example.com（不能直接 200）
+# - https://www.example.com 必须直接 200（不能 502 或连接失败）
 # - http://example.com 建议一跳直达，不接受两跳重定向链
 ```
 
@@ -534,4 +537,36 @@ curl -sLo /dev/null -w "%{http_code}" "$BASE/{example-double-prefix-url}"
 echo ""
 curl -sLo /dev/null -w "%{http_code}" "$BASE/{example-double-prefix-url}"
 echo ""
+```
+
+### Step 13：尾斜杠重定向循环检测（_redirects 冲突）
+
+**问题背景：** 当 Astro 站点配置 `trailingSlash: 'never'` 时，若在 `public/_redirects` 中手动添加 `/xxx/ → /xxx` 的尾斜杠 301 规则，会与 Cloudflare Pages 对「无尾斜杠目录」的默认 308 重定向互相冲突，形成 301 ↔ 308 死循环，报「重定向次数过多」。
+
+**根因链：**
+1. `/xxx/`（带斜杠）→ `_redirects` 规则 301 → `/xxx`（不带斜杠）
+2. `/xxx`（不带斜杠，对应 dist/xxx/index.html 目录）→ Cloudflare Pages 默认 308 → `/xxx/`（带斜杠）
+3. 回到第 1 步，无限循环。
+
+**正确做法：** `trailingSlash: 'never'` 已由 Astro 内置处理尾斜杠，**不应在 `_redirects` 中添加任何 `/xxx/ → /xxx` 尾斜杠 301 规则**；若已有，删除 `public/_redirects` 中的全部尾斜杠 301 规则即可。
+
+**检查命令：**
+
+```bash
+# 对抽样页面分别请求「带斜杠」与「不带斜杠」URL，检测是否构成 301↔308 死循环
+for P in "" "about" "contact" "{关键内页路径}"; do
+  WITH_SLASH="$BASE/$P/"
+  WITHOUT_SLASH="$BASE/$P"
+  echo "=== /$P ==="
+  echo -n "  带斜杠    $WITH_SLASH   → "
+  curl -sI -o /dev/null -w "HTTP %{http_code} → %{redirect_url}\n" "$WITH_SLASH"
+  echo -n "  不带斜杠  $WITHOUT_SLASH → "
+  curl -sI -o /dev/null -w "HTTP %{http_code} → %{redirect_url}\n" "$WITHOUT_SLASH"
+done
+
+# 期望（trailingSlash: 'never'）：
+# - 不带斜杠 URL 直接 200（或仅一次 301 后 200）
+# - 带斜杠 URL 最多一次 301 → 不带斜杠（或 200）
+# - ❌ 绝不允许：带斜杠 301→不带斜杠，同时不带斜杠 308→带斜杠（这是死循环，页面会「重定向次数过多」）
+# - 若命中死循环：删除 public/_redirects 中所有尾斜杠 301 规则后重新构建部署
 ```
