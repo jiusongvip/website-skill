@@ -7,3 +7,8 @@ gsc_reports/
 # Python 缓存
 __pycache__/
 *.pyc
+
+# 敏感凭证文件（严禁提交）
+.env
+*.env
+.env.local
