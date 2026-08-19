@@ -12,11 +12,13 @@ description: >
 ## 核心配置
 
 ```bash
-# Cloudflare API Token（Pages:Edit 权限）
-CLOUDFLARE_API_TOKEN=YOUR_CLOUDFLARE_API_TOKEN
+# Cloudflare API Token（需 Pages:Edit + Zone DNS:Edit + Zone Dynamic URL Redirects:Edit 三项权限）
+# 凭证保存在同目录 .env 文件（已加入 .gitignore，严禁提交）
+# 使用前加载：Get-Content .env | ForEach-Object { if ($_ -match '^([^#=]+)=(.*)$') { Set-Item "env:$($matches[1])" $matches[2] } }
+CLOUDFLARE_API_TOKEN=<见 .env>
 
 # Account ID
-CLOUDFLARE_ACCOUNT_ID=13a7eab517e3e621f07a73165ee592be
+CLOUDFLARE_ACCOUNT_ID=<见 .env>
 ```
 
 ---
@@ -39,10 +41,10 @@ CLOUDFLARE_ACCOUNT_ID=13a7eab517e3e621f07a73165ee592be
 
 ```bash
 cd d:\workspaces\website
-git clone https://ghfast.top/https://github.com/{USER}/{REPO}.git
+git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 clone https://github.com/{USER}/{REPO}.git
 ```
 
-> 必须用 `ghfast.top` 代理 clone（github.com:443 被墙）。clone 后立即把 remote 恢复为原始 URL。
+> 用系统代理 `127.0.0.1:7897` clone（github.com:443 被墙；`ghfast.top` 已失效，不再使用）。
 
 ### Step 1: 拉取最新代码（避免冲突）
 
@@ -53,9 +55,7 @@ cd {PROJECT_DIR}
 git status                      # 若有未提交改动，先 stash
 git stash                       # 仅当有本地改动时
 git branch -a                   # 确认分支名（master / main，不要假设！）
-git remote set-url origin https://ghfast.top/https://github.com/{USER}/{REPO}.git
-git pull origin {BRANCH} --rebase
-git remote set-url origin https://github.com/{USER}/{REPO}.git
+git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 pull origin {BRANCH} --rebase
 git stash pop                   # 恢复本地改动（仅当之前 stash 了）
 ```
 
@@ -74,7 +74,8 @@ git stash pop                   # 恢复本地改动（仅当之前 stash 了）
 | `package.json` build 脚本是否含 `astro check && astro build` 或裸 `astro build` | 改为 `"build": "npx astro build"` |
 | `astro.config.mjs` 是否有 sitemap 集成 | 无则 `npm install @astrojs/sitemap` + 添加 `import sitemap from "@astrojs/sitemap"` + `integrations: [...sitemap()]` |
 | `package.json` 是否缺 `@astrojs/sitemap` 依赖 | `npm install @astrojs/sitemap` |
-| `astro.config.mjs` 的 `site` 字段 | 确认填了最终域名（如 `https://example.com`） |
+| `astro.config.mjs` 的 `site` 字段 | 填最终域名 `https://www.{域名}`（统一带 www 前缀） |
+| `astro.config.mjs` 的 `trailingSlash` | 设为 `"always"`（内页带尾斜杠，首页根域名例外） |
 | 分支名 | `git branch` 确认是 `master` 还是 `main`，后续 API 调用和 push 都用它 |
 
 > **经验：** 几乎所有旧项目 build 脚本都是 `astro build`，必须改成 `npx astro build`，否则 Cloudflare 构建环境报 `astro: not found`。约半数项目缺 sitemap，需补装。
@@ -103,9 +104,7 @@ dir dist\sitemap*
 cd {PROJECT_DIR}
 git add -A
 git commit -m "fix: use npx astro build and add sitemap integration"   # 有改动才 commit
-git remote set-url origin https://ghfast.top/https://github.com/{USER}/{REPO}.git
-git push origin {BRANCH}
-git remote set-url origin https://github.com/{USER}/{REPO}.git   # 恢复原始 URL
+git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 push origin {BRANCH}
 ```
 
 > 若 push 报 `non-fast-forward`：说明远程有新提交，回到 Step 1 重新 pull --rebase。
@@ -113,8 +112,8 @@ git remote set-url origin https://github.com/{USER}/{REPO}.git   # 恢复原始 
 ### Step 5: API 创建 Git 连接项目（一步到位）
 
 ```powershell
-$env:TOKEN="YOUR_CLOUDFLARE_API_TOKEN"
-$env:AID="13a7eab517e3e621f07a73165ee592be"
+$env:TOKEN = $env:CLOUDFLARE_API_TOKEN
+$env:AID = $env:CLOUDFLARE_ACCOUNT_ID
 
 $body = @{
   name = "{PROJECT_NAME}"
@@ -156,9 +155,7 @@ API 创建项目后，需要一次 `git push` 触发 webhook 启动首次构建�
 ```bash
 cd {PROJECT_DIR}
 git commit --allow-empty -m "chore: trigger Cloudflare Pages deployment"
-git remote set-url origin https://ghfast.top/https://github.com/{USER}/{REPO}.git
-git push origin {BRANCH}
-git remote set-url origin https://github.com/{USER}/{REPO}.git
+git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 push origin {BRANCH}
 ```
 
 部署完成后等待约 30 秒（大型项目更久），访问 `https://{PROJECT_NAME}.pages.dev`。
@@ -175,6 +172,18 @@ curl -sI https://{PROJECT_NAME}.pages.dev/sitemap-index.xml | Select-String "HTT
 ```
 
 ### Step 8: 线上技术 SEO 审计
+
+> ⚠️ **审计已改用 `technology-seo-check` skill（v1.2.0），URL 规范与旧版有重大区别：**
+>
+> | 规范项 | 旧规范 | 新规范（technology-seo-check） |
+> |--------|--------|-------------------------------|
+> | 正式域名 | 裸域名 `https://{域名}` | 带 www `https://www.{域名}` |
+> | trailingSlash | `never`（不带尾斜杠） | `always`（内页带尾斜杠） |
+> | 首页根域名 | 不带尾斜杠 | 不带尾斜杠（例外规则） |
+> | 裸域名 | 直接 200 | 必须 301 跳转到 www |
+> | sitemap 首页 | 不带尾斜杠 | 不带尾斜杠（需 `fix-sitemap-home.mjs` 构建后处理） |
+>
+> 完整 13 步审计流程见 `website-skill/technology-seo-check/SKILL.md`。下方 8a-8d 仅作部署后 pages.dev 快速可达性验证。
 
 部署成功后，对线上页面做基础 SEO 信号检查。以下命令基于 `https://{PROJECT_NAME}.pages.dev`（或自定义域名）。
 
@@ -251,9 +260,100 @@ curl -sI "https://{PROJECT_NAME}.pages.dev/sitemap-0.xml" | Select-String "HTTP"
 | 内页 title/H1 | ✅/❌ |
 ```
 
-### Step 9: 通知用户完成后续操作
+### Step 9: 绑定自定义域名 + 裸域名跳 www + 替换硬编码域名
 
-- **绑定自定义域名**：https://dash.cloudflare.com/{ACCOUNT_ID}/pages/view/{PROJECT_NAME} → 自定义域 → 添加 `example.com`（域名需已在 Cloudflare DNS）
+部署完成后，依次完成域名绑定、裸域名跳转、硬编码替换三步。
+
+#### 9a. API 绑定自定义域名（自动创建 CNAME）
+
+Token 需同时具备 `Pages:Edit` + `Zone DNS:Edit` 权限，绑定时 Cloudflare 会自动创建 CNAME 记录指向 `{PROJECT_NAME}.pages.dev`。
+
+```powershell
+$env:TOKEN = $env:CLOUDFLARE_API_TOKEN
+$env:AID = $env:CLOUDFLARE_ACCOUNT_ID
+
+# 同时绑定裸域名 + www 子域
+foreach ($d in @("example.com", "www.example.com")) {
+  $body = @{ name = $d } | ConvertTo-Json
+  $r = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts/$env:AID/pages/projects/{PROJECT_NAME}/domains" `
+    -Method POST -Headers @{Authorization="Bearer $env:TOKEN"} -ContentType "application/json" -Body $body
+  "绑定 $d → success=$($r.success)"
+}
+```
+
+> 若返回 `already added`（code 8000018），说明该域名已绑定过，跳过即可。
+
+#### 9b. 裸域名 301 跳转 www（Dynamic URL Redirects）
+
+Token 需 `Zone → Dynamic URL Redirects → Edit` 权限。通过 Rulesets API 在 `http_request_dynamic_redirect` 阶段创建/更新重定向规则。
+
+```powershell
+# 获取 zone id
+$zid = (Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones?name=example.com" `
+  -Headers @{Authorization="Bearer $env:TOKEN"}).result[0].id
+
+# 先读取现有规则（避免覆盖已有的规则）
+$existing = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones/$zid/rulesets/phases/http_request_dynamic_redirect/entrypoint" `
+  -Headers @{Authorization="Bearer $env:TOKEN"}
+
+$rule = @{
+  expression = 'http.host eq "example.com"'
+  description = "Redirect root to WWW"
+  action = "redirect"
+  action_parameters = @{
+    from_value = @{
+      status_code = 301
+      target_url = @{ expression = 'concat("https://www.example.com", http.request.uri.path)' }
+      preserve_query_string = $true
+    }
+  }
+}
+
+$rules = @($rule)
+if ($existing.result.rules) { $rules += $existing.result.rules }
+
+$body = @{
+  name = "Redirect rules ruleset"
+  kind = "zone"
+  phase = "http_request_dynamic_redirect"
+  rules = $rules
+} | ConvertTo-Json -Depth 10
+
+Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones/$zid/rulesets/phases/http_request_dynamic_redirect/entrypoint" `
+  -Method PUT -Headers @{Authorization="Bearer $env:TOKEN"} -ContentType "application/json" -Body $body
+```
+
+> 若该 zone 已在 Dashboard 配置过「Redirect from root to WWW」模板，无需重复创建。
+
+#### 9c. 替换硬编码域名
+
+用户最终域名（如 `chinese-tea.com` → `chin-tea.com`，或裸域名 → `www.` 前缀）确定后，代码中硬编码的旧域名必须全量替换，否则 canonical、og:url、schema、邮箱会指向旧域名。
+
+```powershell
+cd {PROJECT_DIR}
+
+# 1. 找出所有硬编码旧域名（含 .txt/.xml 等易遗漏文件）
+Get-ChildItem -Recurse -Include *.astro,*.ts,*.tsx,*.mjs,*.json,*.md,*.txt,*.xml -Path src,public |
+  Where-Object { $_.FullName -notmatch 'node_modules' } |
+  ForEach-Object { if (Select-String -Path $_.FullName -Pattern 'OLD\.com' -Quiet) { Write-Host $_.FullName } }
+
+# 2. 批量替换
+$files = Get-ChildItem -Recurse -Include *.astro,*.ts,*.tsx,*.mjs,*.json,*.md |
+  Where-Object { $_.FullName -notmatch 'node_modules|dist|\.git' }
+foreach ($f in $files) {
+  $c = Get-Content $f.FullName -Raw
+  if ($c -match 'OLD\.com') { ($c -replace 'OLD\.com', 'NEW.com') | Set-Content $f.FullName -NoNewline }
+}
+
+# 3. 重新构建 + 推送（复用 Step 3/4）
+```
+
+> 注意：
+> - `-Include` 通配符**不会匹配 `[slug].astro` 这类含方括号文件名**，需用 `Get-Content -LiteralPath` 逐个处理。
+> - `robots.txt` / `llms.txt` / `opensearch.xml` 的 `Sitemap` 行也要一并替换。
+
+### Step 10: 通知用户完成后续操作
+
 - **Google Search Console**：提交 `https://example.com/sitemap-index.xml`，首次"无法抓取"正常，等 5-10 分钟
 
 ---
@@ -268,13 +368,15 @@ curl -sI "https://{PROJECT_NAME}.pages.dev/sitemap-0.xml" | Select-String "HTTP"
 | 缺少 `sitemap-index.xml` | 项目没装 @astrojs/sitemap | `npm install @astrojs/sitemap` + 添加到 integrations |
 | API 返回 8000006 | Token 权限不足 | Token 需 `Pages:Edit` 权限 |
 | `CLOUDFLARE_API_TOKEN` 不生效 | PowerShell 环境变量语法 | 用 `$env:CLOUDFLARE_API_TOKEN = "..."` |
-| GitHub 操作超时 | github.com:443 被墙 | 全部 git 命令走 `ghfast.top` 代理 |
+| GitHub 操作超时 | github.com:443 被墙 | 用系统代理前缀 `git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897`（ghfast.top 已失效） |
 | push 报 `refspec main does not match` | 实际分支是 `master` | 先 `git branch -a` 确认，不要假设 |
 | push 报 `workflow scope` 错误 | Token 无 workflow 权限 + 仓库有 `.github/workflows/` | 删除 workflow 文件或换 token |
 | API 创建项目成功但无部署 | webhook 未触发 | 执行 `git commit --allow-empty` + push 触发首次构建 |
 | API 创建项目报项目已存在 | 项目之前创建过 | 改为查询项目状态，直接 push 触发重新部署 |
 | sitemap 返回 522 | 部署后缓存未就绪 | 等 10 秒重试，正常现象 |
-| 自定义域名绑定失败 | 需要 OAuth 授权 | 用户必须在浏览器操作（API Token 无 DNS 权限时 CNAME 也不会自动建） |
+| 绑定域名报 `CNAME not set` / `Authentication error` | Token 缺 Zone DNS:Edit 权限 | Token 加 `Zone → DNS → Edit`，Zone Resources 选「所有域名」 |
+| 重定向规则创建报权限错误 | Token 缺 Dynamic URL Redirects 权限 | Token 加 `Zone → Dynamic URL Redirects → Edit` |
+| 绑定域名报 `already added`（8000018） | 域名已绑定过 | 跳过，无需处理 |
 | sitemap 显示"无法抓取" | Google 还没处理 | 正常现象，等几分钟刷新 |
 
 ---
