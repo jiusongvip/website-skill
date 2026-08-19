@@ -29,7 +29,7 @@ BASE="https://www.{用户提供的域名}"
 
 > **域名与 URL 规范（重要）：**
 > 1. 所有站点统一使用带 `www` 前缀的正式域名；裸域名 `https://{域名}` 必须 301 跳转到 `https://www.{域名}`。因此 BASE 一律使用 www 域名。
-> 2. 所有 URL 末尾带 `/`（尾斜杠），Astro 配置 `trailingSlash: "always"`；**首页根域名例外**——首页 canonical 为 `https://www.{域名}`（不带尾斜杠），内页为 `https://www.{域名}/xxx/`（带尾斜杠）。
+> 2. 所有 URL 末尾带 `/`（尾斜杠），Astro 配置 `trailingSlash: "always"`；**首页根域名例外**——首页 canonical 与 sitemap 首页均为 `https://www.{域名}`（不带尾斜杠），内页为 `https://www.{域名}/xxx/`（带尾斜杠）。
 
 所有后续 curl 命令基于此 BASE URL。命令中的具体路径（如 /{list}、/{section}、/locale-path 等）需根据目标网站实际结构调整。
 
@@ -193,7 +193,7 @@ done
 - 图片 alt 缺失：{} 个 (预期 0) ✅/❌
 
 **Sitemap 完整性：**
-- 无尾斜杠 URL：{} 个 (预期 0)
+- 无尾斜杠 URL：{} 个 (预期 1，仅首页)
 - 双 locale 前缀 URL：{} 个 (预期 0)
 - 子文件可达性：{} / 6 个 200 ✅/❌
 
@@ -292,14 +292,15 @@ const title = page.currentPage > 1
 
 ### URL 与域名统一规范（2026-08 起）
 
-1. **所有 URL 末尾带 `/`**：Astro 配置 `trailingSlash: "always"` + 默认 `build.format: "directory"`。内部链接 `<a href>`、canonical、sitemap 均带尾斜杠。
-2. **首页根域名例外**：首页 canonical 为 `https://www.{域名}`（不带尾斜杠），内页为 `https://www.{域名}/xxx/`。实现：`Astro.url.pathname === "/"` 时对 canonical 去掉尾斜杠，否则保留。
+1. **所有 URL 末尾带 `/`**：Astro 配置 `trailingSlash: "always"` + 默认 `build.format: "directory"`。内部链接 `<a href>`、canonical、sitemap 内页均带尾斜杠。
+2. **首页根域名例外**：首页 canonical 与 sitemap 首页均为 `https://www.{域名}`（不带尾斜杠），内页为 `https://www.{域名}/xxx/`。canonical 实现：`Astro.url.pathname === "/"` 时对 canonical 去掉尾斜杠；sitemap 首页需构建后处理（见第 9 条）。
 3. **所有域名统一带 www**：`site` 设为 `https://www.{域名}`，代码内所有 URL（schema/JSON-LD/robots/llms.txt 等）统一为 www。邮箱 `hello@{域名}` 不加 www。
 4. **裸域名 301 跳 www**：Cloudflare 用「从根重定向到 WWW」模板（请求 URL `https://{域名}/*`，目标 `https://www.{域名}/${1}`，状态码 301，开启保留查询字符串）。必须确认裸域名 DNS 记录为橙色云朵（已代理）状态。
 5. **不要用 `build.format: "file"`**：会生成 `.html` 物理文件（虽 Cloudflare clean URL 会隐藏 .html，但不符规范），应保持默认 `directory`。
 6. **不要混用 `directory` + `never`**：Cloudflare Pages 对「无尾斜杠目录」请求默认 308 加斜杠，导致 `<a href="/xxx">` 点击后 URL 变成 `/xxx/`，a href 与实际 URL 不一致。
 7. **不要在 `_redirects` 加尾斜杠 301 规则**：与 Cloudflare Pages 目录 308 行为冲突，形成 301↔308 死循环。`trailingSlash` 已由 Astro 内置处理。
 8. **内部链接改尾斜杠要扫三种形式**：`<a href="/xxx">`（双引号）、`<a href='/xxx'>`（单引号）、`{ href: "/xxx" }`（JS 对象/数据数组），以及组件里动态拼接的 `/xxx/${slug}`。
+9. **sitemap 首页去尾斜杠需构建后处理**：@astrojs/sitemap 的 `serialize` 钩子无法去掉根路径尾斜杠（底层 `new URL(url).toString()` 会强制加回 `/`）。需新增 `scripts/fix-sitemap-home.mjs`，在 build 脚本末尾追加 `&& node scripts/fix-sitemap-home.mjs`，把 `<loc>https://www.xxx.com/</loc>` 替换为 `<loc>https://www.xxx.com</loc>`。
 ### 新增检查项：线上特有信号
 
 ```bash
@@ -317,7 +318,7 @@ curl -sLo /dev/null -w "%{http_code}" "$BASE/{section}/"
 
 ### Step 7：Sitemap 完整性检查
 
-验证 sitemap 中的 URL 均带尾部斜杠、无双 locale 前缀。双 locale 前缀是已知曾导致 GSC 报错的问题。
+验证 sitemap 中的 URL 尾斜杠规范（内页均带尾斜杠、仅首页根域名不带尾斜杠）、无双 locale 前缀。双 locale 前缀是已知曾导致 GSC 报错的问题。
 
 **问题背景：**
 
@@ -333,9 +334,9 @@ curl -sLo /dev/null -w "%{http_code}" "$BASE/{section}/"
 
 ```bash
 # === 尾部斜杠检查 ===
-# 抽取 sitemap 前 50 个 URL，统计不以 "/" 结尾的数量（trailingSlash: always 下应全部带尾斜杠）
+# 抽取 sitemap 前 50 个 URL，统计不以 "/" 结尾的数量（内页全带尾斜杠，仅首页根域名不带）
 curl -sL "$BASE/{sitemap-name}.xml" | grep -oP '<loc>\K[^<]+' | head -50 | grep -v '/$' | wc -l
-# 期望：0（全部带尾斜杠）
+# 期望：1（仅首页 https://www.{域名} 不带尾斜杠）
 
 # === 双 locale 前缀检查 ===
 # 全量扫描 sitemap，检查是否有 {locale}/{locale}/ 或 /en/en/ 模式
