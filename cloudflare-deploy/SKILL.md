@@ -354,6 +354,24 @@ foreach ($f in $files) {
 
 ### Step 10: 通知用户完成后续操作
 
+- **Google Analytics**：提醒用户提供 GA 代码（gtag.js，ID 格式 `G-XXXXXXXXXX`），添加到布局文件（如 `Layout.astro`）的 `<head>` 中：
+
+  ```html
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <script is:inline>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+  ```
+
+  > 注意：
+  > - 内联 gtag 脚本需加 `is:inline`，避免 Astro 打包处理
+  > - `embed`/iframe 类 noindex 页面通常不加 GA（避免重复统计嵌入流量）
+  > - 添加后需重新构建 + 推送（复用 Step 3/4），并验证线上已含 GA ID
+
 - **Google Search Console**：提交 `https://example.com/sitemap-index.xml`，首次"无法抓取"正常，等 5-10 分钟
 
 ---
