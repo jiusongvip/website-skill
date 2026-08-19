@@ -27,7 +27,9 @@ metadata:
 BASE="https://www.{用户提供的域名}"
 ```
 
-> **域名规范（重要）：** 所有站点统一使用带 `www` 前缀的正式域名；裸域名 `https://{域名}` 必须 301 跳转到 `https://www.{域名}`。因此 BASE 一律使用 www 域名。
+> **域名与 URL 规范（重要）：**
+> 1. 所有站点统一使用带 `www` 前缀的正式域名；裸域名 `https://{域名}` 必须 301 跳转到 `https://www.{域名}`。因此 BASE 一律使用 www 域名。
+> 2. 所有 URL 末尾带 `/`（尾斜杠），Astro 配置 `trailingSlash: "always"`；**首页根域名例外**——首页 canonical 为 `https://www.{域名}`（不带尾斜杠），内页为 `https://www.{域名}/xxx/`（带尾斜杠）。
 
 所有后续 curl 命令基于此 BASE URL。命令中的具体路径（如 /{list}、/{section}、/locale-path 等）需根据目标网站实际结构调整。
 
@@ -191,14 +193,14 @@ done
 - 图片 alt 缺失：{} 个 (预期 0) ✅/❌
 
 **Sitemap 完整性：**
-- 尾部斜杠 URL：{} 个 (预期 0)
+- 无尾斜杠 URL：{} 个 (预期 0)
 - 双 locale 前缀 URL：{} 个 (预期 0)
 - 子文件可达性：{} / 6 个 200 ✅/❌
 
 **Canonical / hreflang 一致性：**
 - {primary-locale} 首页 + 关键页：逐页列出
 - {locale} 首页 + 关键页：{} / 7 ✅/❌
-- Canonical 尾斜杠：{} 个页面有尾斜杠 (预期 0) ✅/❌
+- Canonical 无尾斜杠：{} 个页面无尾斜杠 (预期 0，首页根域名除外) ✅/❌
 
 **重定向链路（统一跳转到 www）：**
 - http://example.com → {} ({301|302}) ✅/❌
@@ -212,7 +214,7 @@ done
 - 抽样页面 3：title {} chars ✅/❌, desc {} chars ✅/❌, H1 ✅/❌, canonical ✅/❌
 
 **内部链接尾斜杠：**
-- 首页带尾斜杠的内部链接数：{} (预期 0) ✅/❌
+- 首页不带尾斜杠的内部链接数：{} (预期 0) ✅/❌
 
 **文本重复：**
 - {lang-label}：{} 次 (预期 1)
@@ -232,7 +234,7 @@ done
 - cost-guide：{} ✅/❌
 
 **404 遗留确认：**
-- 尾斜杠 → 301 重定向：{} ✅/❌
+- 无尾斜杠 → 301/308 重定向：{} ✅/❌
 - 双 {locale} 前缀 → 404：{} ✅/❌
 
 **修复建议：** {如有问题列出}
@@ -287,6 +289,17 @@ const title = page.currentPage > 1
 - 不要为了降低关键词次数而删除必要的导航文本，搜索引擎通过 `<nav>` 等语义标签会自动降权
 - `CSS content` 文本对 screen reader 的兼容性不一致，重要的无障碍文本应保留在 HTML 中
 - data-* 属性值可能被某些 SEO 工具计入（如 aitdk），如果发现仍然被计数，改用 JS 动态 `createElement` 方案
+
+### URL 与域名统一规范（2026-08 起）
+
+1. **所有 URL 末尾带 `/`**：Astro 配置 `trailingSlash: "always"` + 默认 `build.format: "directory"`。内部链接 `<a href>`、canonical、sitemap 均带尾斜杠。
+2. **首页根域名例外**：首页 canonical 为 `https://www.{域名}`（不带尾斜杠），内页为 `https://www.{域名}/xxx/`。实现：`Astro.url.pathname === "/"` 时对 canonical 去掉尾斜杠，否则保留。
+3. **所有域名统一带 www**：`site` 设为 `https://www.{域名}`，代码内所有 URL（schema/JSON-LD/robots/llms.txt 等）统一为 www。邮箱 `hello@{域名}` 不加 www。
+4. **裸域名 301 跳 www**：Cloudflare 用「从根重定向到 WWW」模板（请求 URL `https://{域名}/*`，目标 `https://www.{域名}/${1}`，状态码 301，开启保留查询字符串）。必须确认裸域名 DNS 记录为橙色云朵（已代理）状态。
+5. **不要用 `build.format: "file"`**：会生成 `.html` 物理文件（虽 Cloudflare clean URL 会隐藏 .html，但不符规范），应保持默认 `directory`。
+6. **不要混用 `directory` + `never`**：Cloudflare Pages 对「无尾斜杠目录」请求默认 308 加斜杠，导致 `<a href="/xxx">` 点击后 URL 变成 `/xxx/`，a href 与实际 URL 不一致。
+7. **不要在 `_redirects` 加尾斜杠 301 规则**：与 Cloudflare Pages 目录 308 行为冲突，形成 301↔308 死循环。`trailingSlash` 已由 Astro 内置处理。
+8. **内部链接改尾斜杠要扫三种形式**：`<a href="/xxx">`（双引号）、`<a href='/xxx'>`（单引号）、`{ href: "/xxx" }`（JS 对象/数据数组），以及组件里动态拼接的 `/xxx/${slug}`。
 ### 新增检查项：线上特有信号
 
 ```bash
@@ -304,25 +317,25 @@ curl -sLo /dev/null -w "%{http_code}" "$BASE/{section}/"
 
 ### Step 7：Sitemap 完整性检查
 
-验证 sitemap 中的 URL 无尾部斜杠、无双 locale 前缀。这两个是已知曾导致 GSC 报错的问题。
+验证 sitemap 中的 URL 均带尾部斜杠、无双 locale 前缀。双 locale 前缀是已知曾导致 GSC 报错的问题。
 
 **问题背景：**
 
 | GSC 问题类型 | 根因 | 修复 | GSC 消退 |
 |-------------|------|------|----------|
-| "备用网页（有适当的规范标记）" | canonical 有 `/` 但 hreflang 自引用无 `/`，Google 拆成两个 URL | `trailingSlash: 'never'` | 部署后重新抓取 |
-| "已发现 — 尚未编入索引" | 分页链接如 `/{list}/10/` 带 `/`，Google 抓到但未索引 | `trailingSlash: 'never'` | 部署后重新抓取 |
+| "备用网页（有适当的规范标记）" | canonical 无 `/` 但 hreflang 自引用有 `/`（或反之），Google 拆成两个 URL | `trailingSlash: 'always'`（内页带 `/`，首页根域名除外） | 部署后重新抓取 |
+| "已发现 — 尚未编入索引" | 分页链接如 `/{list}/10` 无 `/`，与 canonical 不一致 | `trailingSlash: 'always'` | 部署后重新抓取 |
 | "未找到 (404)" | `/{example-double-prefix-url}` 等双 locale 前缀 — 历史构建 bug，当前构建不产出 | 确认当前不产出，历史 404 自然消退 | 部署后 GSC 验证修复 |
-| "未找到 (404)" | `/{list}/xxx/` 尾部斜杠导致 404 | `trailingSlash: 'never'` | 部署后重新抓取 |
+| "未找到 (404)" | `/{list}/xxx` 无尾斜杠导致 404 | `trailingSlash: 'always'` | 部署后重新抓取 |
 | "网页会自动重定向" | `http://` / `example.com` 跳转到 `https://www.{用户提供的域名}` — 正常裸域跳 www 行为 | 确认是 301 非 302 | 无需修复 |
 
 **检查命令：**
 
 ```bash
 # === 尾部斜杠检查 ===
-# 抽取 sitemap 前 50 个 URL，检索是否以 "/" 结尾
-curl -sL "$BASE/{sitemap-name}.xml" | grep -oP '<loc>\K[^<]+' | head -50 | grep '/$' | wc -l
-# 期望：0
+# 抽取 sitemap 前 50 个 URL，统计不以 "/" 结尾的数量（trailingSlash: always 下应全部带尾斜杠）
+curl -sL "$BASE/{sitemap-name}.xml" | grep -oP '<loc>\K[^<]+' | head -50 | grep -v '/$' | wc -l
+# 期望：0（全部带尾斜杠）
 
 # === 双 locale 前缀检查 ===
 # 全量扫描 sitemap，检查是否有 {locale}/{locale}/ 或 /en/en/ 模式
@@ -345,7 +358,7 @@ Google 会对 canonical 和 hreflang 自引用不一致的页面视为"备用网
 
 **Canonical 尾斜杠一致性检查（新增）：**
 
-canonical URL 必须与页面实际访问 URL 完全一致（包括尾斜杠）。对于 `trailingSlash: 'never'` 的 Astro 项目，canonical 不应有尾斜杠。常见问题：`new URL('/', site).href` 对根路径返回带 `/` 的 URL，导致首页 canonical 与实际 URL 不一致。
+canonical URL 必须与页面实际访问 URL 完全一致（包括尾斜杠）。对于 `trailingSlash: 'always'` 的 Astro 项目：内页 canonical 带尾斜杠（`https://www.{域名}/xxx/`），首页根域名 canonical 不带尾斜杠（`https://www.{域名}`）。常见问题：`new URL('/', site).href` 对根路径返回带 `/` 的 URL，需对首页单独去掉尾斜杠。
 
 **检查命令：**
 
@@ -358,11 +371,13 @@ for PAGE in "" {及网站关键页面路径}; do
   echo "  canonical: $CANONICAL"
   echo "  hreflang {primary-locale}: $HREFLANG_SELF"
   
-  # 检查 canonical 尾斜杠
-  if [[ "$CANONICAL" == */ ]]; then
-    echo "  ❌ canonical 有尾斜杠！"
+  # 检查 canonical 尾斜杠（always：内页应有尾斜杠，首页根域名应无尾斜杠）
+  if [[ "$PAGE" == "" && "$CANONICAL" == */ ]]; then
+    echo "  ❌ 首页 canonical 不应有尾斜杠"
+  elif [[ "$PAGE" != "" && "$CANONICAL" != */ ]]; then
+    echo "  ❌ 内页 canonical 应有尾斜杠"
   else
-    echo "  ✅ canonical 无尾斜杠"
+    echo "  ✅ canonical 尾斜杠正确"
   fi
   
   if [ "$CANONICAL" = "$HREFLANG_SELF" ]; then
@@ -380,11 +395,13 @@ for PAGE in "" {及网站关键页面路径}; do
   echo "  canonical: $CANONICAL"
   echo "  hreflang {locale}: $HREFLANG_SELF"
   
-  # 检查 canonical 尾斜杠
-  if [[ "$CANONICAL" == */ ]]; then
-    echo "  ❌ canonical 有尾斜杠！"
+  # 检查 canonical 尾斜杠（always：内页应有尾斜杠，首页根域名应无尾斜杠）
+  if [[ "$PAGE" == "" && "$CANONICAL" == */ ]]; then
+    echo "  ❌ 首页 canonical 不应有尾斜杠"
+  elif [[ "$PAGE" != "" && "$CANONICAL" != */ ]]; then
+    echo "  ❌ 内页 canonical 应有尾斜杠"
   else
-    echo "  ✅ canonical 无尾斜杠"
+    echo "  ✅ canonical 尾斜杠正确"
   fi
   
   if [ "$CANONICAL" = "$HREFLANG_SELF" ]; then
@@ -485,31 +502,31 @@ for PAGE_URL in $INNER_PAGES; do
     echo "  ✅ H1 存在"
   fi
   
-  # Canonical 尾斜杠
+  # Canonical 尾斜杠（always：内页应有尾斜杠）
   CANONICAL=$(echo "$HTML" | grep -oP '<link rel="canonical" href="\K[^"]+')
   if [[ "$CANONICAL" == */ ]]; then
-    echo "  ❌ canonical 有尾斜杠：$CANONICAL"
+    echo "  ✅ canonical 有尾斜杠：$CANONICAL"
   else
-    echo "  ✅ canonical 无尾斜杠：$CANONICAL"
+    echo "  ❌ canonical 无尾斜杠：$CANONICAL"
   fi
 done
 ```
 
 ### Step 11：内部链接尾斜杠检查（新增）
 
-检查页面内 `<a href>` 链接是否带尾斜杠。对于 `trailingSlash: 'never'` 的 Astro 项目，内部链接不应有尾斜杠。
+检查页面内 `<a href>` 链接是否带尾斜杠。对于 `trailingSlash: 'always'` 的 Astro 项目，内部链接必须带尾斜杠（首页根路径 `/` 与锚点 `#` 除外）。
 
 **检查命令：**
 
 ```bash
-# 检查首页内部链接
-echo "=== 首页内部链接尾斜杠检查 ==="
-curl -sL "$BASE/" | grep -oP 'href="\K[^"]+' | grep -E '^/' | grep '/$' | head -10
-# 期望：无输出（内部链接无尾斜杠）
+# 检查首页内部链接（always 模式：内部链接必须带尾斜杠，锚点 # 除外）
+echo "=== 首页不带尾斜杠的内部链接 ==="
+curl -sL "$BASE/" | grep -oP 'href="\K[^"]+' | grep -E '^/' | grep -v '/$' | grep -v '#' | head -10
+# 期望：无输出（内部链接均带尾斜杠）
 
-# 统计带尾斜杠的内部链接数量
-TRAILING_SLASH_COUNT=$(curl -sL "$BASE/" | grep -oP 'href="\K[^"]+' | grep -E '^/' | grep '/$' | wc -l)
-echo "带尾斜杠的内部链接数：$TRAILING_SLASH_COUNT"
+# 统计不带尾斜杠的内部链接数量
+NO_SLASH_COUNT=$(curl -sL "$BASE/" | grep -oP 'href="\K[^"]+' | grep -E '^/' | grep -v '/$' | grep -v '#' | wc -l)
+echo "不带尾斜杠的内部链接数：$NO_SLASH_COUNT"
 # 期望：0
 ```
 
@@ -522,14 +539,14 @@ echo "带尾斜杠的内部链接数：$TRAILING_SLASH_COUNT"
 | 模式 | 示例 | 来源 |
 |------|------|------|
 | 双 locale 前缀 | `/{example-double-prefix-url}` | 历史构建 bug（sitemap 中无此 URL） |
-| 尾斜杠单页面 | `/{list}/{example-page}/` | `trailingSlash: 'always'` 旧构建 |
+| 无尾斜杠单页面 | `/{list}/{example-page}` | `trailingSlash: 'never'` 旧构建 |
 
 ```bash
-# 部署 trailingSlash: 'never' 后，带 / 的旧 URL 应返回 301 → 新 URL
-echo "=== 尾斜杠 → 301 重定向验证 ==="
-curl -sI "$BASE/about/" | head -3
-curl -sI "$BASE/contact/" | head -3
-curl -sI "$BASE/{list-page}/10/" | head -3
+# 部署 trailingSlash: 'always' 后，不带 / 的旧 URL 应返回 301/308 → 带 / 的新 URL
+echo "=== 无尾斜杠 → 重定向验证 ==="
+curl -sI "$BASE/about" | head -3
+curl -sI "$BASE/contact" | head -3
+curl -sI "$BASE/{list-page}/10" | head -3
 
 # 双 locale 前缀仍应为 404（不会产出）
 echo "=== 双 {locale} prefix → 404 确认 ==="
@@ -541,14 +558,14 @@ echo ""
 
 ### Step 13：尾斜杠重定向循环检测（_redirects 冲突）
 
-**问题背景：** 当 Astro 站点配置 `trailingSlash: 'never'` 时，若在 `public/_redirects` 中手动添加 `/xxx/ → /xxx` 的尾斜杠 301 规则，会与 Cloudflare Pages 对「无尾斜杠目录」的默认 308 重定向互相冲突，形成 301 ↔ 308 死循环，报「重定向次数过多」。
+**问题背景：** 若在 `public/_redirects` 中手动添加 `/xxx/ → /xxx` 的尾斜杠 301 规则，会与 Cloudflare Pages 对「无尾斜杠目录」的默认 308 重定向互相冲突，形成 301 ↔ 308 死循环，报「重定向次数过多」。无论 `trailingSlash` 配置是 `never` 还是 `always`，都**不应**在 `_redirects` 中手动添加尾斜杠 301 规则。
 
 **根因链：**
 1. `/xxx/`（带斜杠）→ `_redirects` 规则 301 → `/xxx`（不带斜杠）
 2. `/xxx`（不带斜杠，对应 dist/xxx/index.html 目录）→ Cloudflare Pages 默认 308 → `/xxx/`（带斜杠）
 3. 回到第 1 步，无限循环。
 
-**正确做法：** `trailingSlash: 'never'` 已由 Astro 内置处理尾斜杠，**不应在 `_redirects` 中添加任何 `/xxx/ → /xxx` 尾斜杠 301 规则**；若已有，删除 `public/_redirects` 中的全部尾斜杠 301 规则即可。
+**正确做法：** `trailingSlash` 已由 Astro 内置处理尾斜杠，**不应在 `_redirects` 中添加任何 `/xxx/ → /xxx` 尾斜杠 301 规则**；若已有，删除 `public/_redirects` 中的全部尾斜杠 301 规则即可。
 
 **检查命令：**
 
@@ -564,9 +581,9 @@ for P in "" "about" "contact" "{关键内页路径}"; do
   curl -sI -o /dev/null -w "HTTP %{http_code} → %{redirect_url}\n" "$WITHOUT_SLASH"
 done
 
-# 期望（trailingSlash: 'never'）：
-# - 不带斜杠 URL 直接 200（或仅一次 301 后 200）
-# - 带斜杠 URL 最多一次 301 → 不带斜杠（或 200）
+# 期望（trailingSlash: 'always'）：
+# - 带斜杠 URL 直接 200
+# - 不带斜杠 URL 最多一次 308/301 → 带斜杠（Cloudflare Pages 目录默认行为）
 # - ❌ 绝不允许：带斜杠 301→不带斜杠，同时不带斜杠 308→带斜杠（这是死循环，页面会「重定向次数过多」）
 # - 若命中死循环：删除 public/_redirects 中所有尾斜杠 301 规则后重新构建部署
 ```
