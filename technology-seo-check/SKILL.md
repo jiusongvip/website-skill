@@ -1,8 +1,8 @@
 ---
 name: site-seo-check
 description: >-
-  通用线上技术SEO审计技能，适配所有网站。curl线上页面审计基础信号(title/desc/H1/alt)、sitemap、文本重复、分页title、canonical尾斜杠、www重定向、内页抽样、内部链接尾斜杠。用户提供域名。触发词：SEO检查、网站SEO、seo check、技术SEO。
-version: 1.2.0
+  通用线上技术SEO审计技能，适配所有网站。curl线上页面审计基础信号(title长度/desc长度/H1唯一/H2≥2/H3不跳级/alt/OG社交标签/robots.txt/sitemap)、文本重复、分页title、canonical尾斜杠、www重定向、内页抽样、内部链接尾斜杠。用户提供域名。触发词：SEO检查、网站SEO、seo check、技术SEO。
+version: 1.3.0
 metadata:
   hermes:
     tags: [seo, tech-seo, keyword-density, daily-check]
@@ -41,18 +41,25 @@ BASE="https://www.{用户提供的域名}"
 
 | 检查项 | 阈值 | 修复方式 |
 |--------|------|----------|
-| `<h1>` 存在 | 必须有至少 1 个 h1 | `sr-only` 或可见 h1 |
+| `<h1>` 唯一性 | 有且仅有 1 个 h1 | 多余 h1 降级为 h2/h3；缺失时补可见或 `sr-only` h1 |
 | `<title>` 长度 | 40-60 字符 | 扩展 i18n `page.home.seoTitle` |
 | `<meta description>` 长度 | 140-160 字符 | 扩展 i18n `page.home.seoDescription` |
+| `<h2>` 数量 | ≥ 2 个 | 长文按内容主题分区补 h2 小标题 |
+| `<h3>` 数量 | ≥ 1 个且不跳级 | h3 必须出现在 h2 之后；长文页 h3 可多于 h2 |
+| OG / Social tags | og:title / og:description / og:image / twitter:card 必须存在 | 在全局 Head 组件统一注入 |
 | `/sitemap.xml` 可访问 | 必须返回 200 或 301 | `public/sitemap.xml` → sitemap-index |
 | `<img>` alt 属性 | 所有 img 必须有 alt | 逐一补齐 |
 
 **检查命令：**
 
 ```bash
-# H1（使用 -z 参数使 . 匹配换行符，解决跨行 H1 匹配问题）
+# H1 内容（使用 -z 参数使 . 匹配换行符，解决跨行 H1 匹配问题）
 curl -sL "$BASE/" | grep -oPz '(?s)<h1[^>]*>.*?</h1>' | head -3
-# 期望：至少 1 个 h1
+# 期望：展示至少 1 个 h1 文本
+
+# H1 唯一性（统计开标签数量，期望恰好 1 个）
+curl -sL "$BASE/" | grep -oP '<h1(?=[ >])' | wc -l
+# 期望：1（若 > 1 需合并或降级多余 H1）
 
 # Title 长度
 curl -sL "$BASE/" | grep -oP '<title>\K[^<]+' | wc -c
@@ -72,14 +79,32 @@ echo ""
 # 图片 alt 缺失
 curl -sL "$BASE/" | grep -oP '<img\s[^>]*>' | grep -v 'alt=' | wc -l
 # 期望：0
+
+# H2 数量（内容分区标题，反映页面结构层级）
+curl -sL "$BASE/" | grep -oP '<h2(?=[ >])' | wc -l
+# 期望：≥ 2（若为 0 或 1，需补充内容分区小标题）
+
+# H3 数量（H2 下的子分区）
+curl -sL "$BASE/" | grep -oP '<h3(?=[ >])' | wc -l
+# 期望：≥ 1 且不跳级（若 H3 > 0 则必须先有 H2；长文内容页 H3 可多于 H2，工具/落地页可为 0）
+
+# OG / Social meta tags（社交分享富媒体展示，属性顺序无关）
+curl -sL "$BASE/" | grep -oP '<meta[^>]*property="og:(title|description|image)"' | wc -l
+# 期望：≥ 3（og:title / og:description / og:image，另建议 og:url / og:type / og:site_name）
+curl -sL "$BASE/" | grep -oP '<meta[^>]*name="twitter:(card|title|description|image)"' | wc -l
+# 期望：≥ 1（twitter:card 必须存在；twitter:title/description/image 建议齐备）
 ```
 
 同样检查 {locale} 首页：
 
 ```bash
 curl -sL "$BASE/{locale}/" | grep -oPz '(?s)<h1[^>]*>.*?</h1>' | head -3
+curl -sL "$BASE/{locale}/" | grep -oP '<h1(?=[ >])' | wc -l
 curl -sL "$BASE/{locale}/" | grep -oP '<title>\K[^<]+' | wc -c
 curl -sL "$BASE/{locale}/" | grep -oP '<meta name="description" content="\K[^"]+' | wc -c
+curl -sL "$BASE/{locale}/" | grep -oP '<h2(?=[ >])' | wc -l
+curl -sL "$BASE/{locale}/" | grep -oP '<h3(?=[ >])' | wc -l
+curl -sL "$BASE/{locale}/" | grep -oP '<meta[^>]*property="og:(title|description|image)"' | wc -l
 curl -sL "$BASE/{locale}/" | grep -oP '<img\s[^>]*>' | grep -v 'alt=' | wc -l
 ```
 
@@ -186,9 +211,13 @@ done
 **线上域名：** https://{用户提供的域名}
 
 **首页基础信号：**
-- H1：{} ✅/❌
+- H1 唯一性：{} 个 (预期 1) ✅/❌
 - Title 长度：{} chars (预期 40-60) ✅/❌
 - Description 长度：{} chars (预期 140-160) ✅/❌
+- H2 数量：{} 个 (预期 ≥ 2) ✅/❌
+- H3 数量：{} 个 (预期 ≥ 1 且不跳级) ✅/❌
+- OG/Social tags：og:{} / twitter:{} ✅/❌
+- robots.txt：{} ✅/❌
 - sitemap.xml：{} ✅/❌
 - 图片 alt 缺失：{} 个 (预期 0) ✅/❌
 
@@ -304,8 +333,16 @@ const title = page.currentPage > 1
 ### 新增检查项：线上特有信号
 
 ```bash
-# robots.txt
-curl -sL "$BASE/robots.txt"
+# robots.txt（可访问性：应返回 200）
+curl -sLo /dev/null -w "%{http_code}" "$BASE/robots.txt"
+echo ""
+# 期望：200
+
+# robots.txt 内容：放行规则 + sitemap 引用
+curl -sL "$BASE/robots.txt" | head -20
+# 期望：User-agent: * 与 Allow: /（不误拦全站）；无 Disallow: /
+curl -sL "$BASE/robots.txt" | grep -oP 'Sitemap:\s*\K\S+'
+# 期望：输出 sitemap URL（www 域名），与线上实际 sitemap 一致
 
 # sitemap
 curl -sL "$BASE/sitemap-index.xml" | head -20
@@ -494,13 +531,15 @@ for PAGE_URL in $INNER_PAGES; do
     echo "  ✅ description 长度达标"
   fi
   
-  # H1
-  H1_COUNT=$(echo "$HTML" | grep -oPz '(?s)<h1[^>]*>.*?</h1>' | wc -l)
+  # H1（唯一性：恰好 1 个）
+  H1_COUNT=$(echo "$HTML" | grep -oP '<h1(?=[ >])' | wc -l)
   echo "  h1 count: $H1_COUNT"
   if [ $H1_COUNT -eq 0 ]; then
     echo "  ❌ 缺少 H1"
+  elif [ $H1_COUNT -gt 1 ]; then
+    echo "  ❌ 存在多个 H1（应仅 1 个，多余的降级为 H2/H3）"
   else
-    echo "  ✅ H1 存在"
+    echo "  ✅ H1 唯一"
   fi
   
   # Canonical 尾斜杠（always：内页应有尾斜杠）
@@ -587,4 +626,57 @@ done
 # - 不带斜杠 URL 最多一次 308/301 → 带斜杠（Cloudflare Pages 目录默认行为）
 # - ❌ 绝不允许：带斜杠 301→不带斜杠，同时不带斜杠 308→带斜杠（这是死循环，页面会「重定向次数过多」）
 # - 若命中死循环：删除 public/_redirects 中所有尾斜杠 301 规则后重新构建部署
+```
+
+### Step 14：内容结构层级与 Social Meta 检查（新增）
+
+验证全站页面的标题层级结构（H1 唯一、H2 ≥ 2、H3 不跳级）与社交分享标签（OG / Twitter Card）是否齐备。**规则：单页面只能有 1 个 H1，但可有多个 H2/H3；H3 必须出现在 H2 之后（不得跳级）；OG 与 Twitter Card 需在 Head 中全局注入。**
+
+**检查命令（首页 + 抽样内页循环）：**
+
+```bash
+# 循环抽样关键页面（将 {sample-pages} 替换为实际路径列表，如 "" "about" "blog" 等）
+for P in {sample-pages}; do
+  HTML=$(curl -sL "$BASE/$P/")
+  H1=$(echo "$HTML" | grep -oP '<h1(?=[ >])' | wc -l)
+  H2=$(echo "$HTML" | grep -oP '<h2(?=[ >])' | wc -l)
+  H3=$(echo "$HTML" | grep -oP '<h3(?=[ >])' | wc -l)
+  OG=$(echo "$HTML" | grep -oP '<meta[^>]*property="og:(title|description|image)"' | wc -l)
+  TW=$(echo "$HTML" | grep -oP '<meta[^>]*name="twitter:(card|title|description|image)"' | wc -l)
+  echo "=== /$P/  H1=$H1  H2=$H2  H3=$H3  OG=$OG  twitter=$TW ==="
+  [ "$H1" -eq 1 ] && echo "  ✅ H1 唯一（1 个）" || echo "  ❌ H1 数量应为 1，当前 $H1"
+  [ "$H2" -ge 2 ] && echo "  ✅ H2 ≥ 2（$H2 个）" || echo "  ❌ H2 应 ≥ 2，当前 $H2"
+  if [ "$H3" -ge 1 ] && [ "$H2" -eq 0 ]; then
+    echo "  ❌ H3 跳级：存在 $H3 个 h3 但无 h2"
+  elif [ "$H3" -ge 1 ]; then
+    echo "  ✅ H3 存在（$H3 个，嵌套于 h2 之下）"
+  else
+    echo "  ⚠️ H3 = 0（纯工具/落地页可接受，内容页需补充）"
+  fi
+  [ "$OG" -ge 3 ] && echo "  ✅ OG tags 齐备（$OG 项）" || echo "  ❌ og:title / og:description / og:image 需齐备，当前 $OG"
+  [ "$TW" -ge 1 ] && echo "  ✅ Twitter Card 存在（$TW 项）" || echo "  ❌ twitter:card 缺失"
+done
+```
+
+**期望阈值汇总：**
+
+| 检查项 | 阈值 | 说明 |
+|--------|------|------|
+| H1 | 恰好 1 个 | 唯一主题；多于 1 个需合并或降级为 H2/H3 |
+| H2 | ≥ 2 个 | 内容分区，反映页面结构化程度（参考规范：每页至少 2 个 H2） |
+| H3 | ≥ 1 个（内容页） | 长文子分区；纯工具页可为 0，但不得在 H2 之前出现 |
+| OG tags | ≥ 3 项 | og:title / og:description / og:image（另建议 og:url / og:type / og:site_name） |
+| Twitter Card | ≥ 1 项 | twitter:card 必须存在（twitter:title / description / image 建议齐备） |
+
+**修复方式：**
+
+1. **标题层级：** 保留唯一 H1，超出的标题按内容层级降级为 H2/H3；若源码中首个 H2 之前出现 H3，调整分区层级（大段落拆出 H2，再在 H2 下细分 H3）。
+2. **OG/Social：** 在全局 `<Head>` 或公共 Layout 统一注入，各页面通过 frontmatter 传入 title/description/image；og:image 建议 1200×630 的 PNG/JPG 并稳定可访问（与 canonical 同域）。
+3. **示例（Astro）：**
+
+```astro
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:image" content={image} />
+<meta name="twitter:card" content="summary_large_image" />
 ```
