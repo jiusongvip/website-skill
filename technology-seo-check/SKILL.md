@@ -1,8 +1,8 @@
 ---
 name: site-seo-check
 description: >-
-  通用线上技术SEO审计技能，适配所有网站。curl线上页面审计基础信号(title长度/desc长度/H1唯一/H2≥2/H3不跳级/alt/OG社交标签/robots.txt/sitemap)、文本重复、分页title、canonical尾斜杠、www重定向、内页抽样、内部链接尾斜杠。用户提供域名。触发词：SEO检查、网站SEO、seo check、技术SEO。
-version: 1.3.0
+  通用线上技术SEO审计技能，适配所有网站。curl线上页面审计基础信号(title长度/desc长度/H1唯一/H2≥2/H3不跳级/alt/OG社交标签/robots.txt/sitemap)、性能检查(CWV/Lighthouse/PageSpeed)、文本重复、分页title、canonical尾斜杠、www重定向、内页抽样、内部链接尾斜杠。用户提供域名。触发词：SEO检查、网站SEO、seo check、技术SEO。
+version: 1.4.0
 metadata:
   hermes:
     tags: [seo, tech-seo, keyword-density, daily-check]
@@ -265,6 +265,15 @@ done
 **404 遗留确认：**
 - 无尾斜杠 → 301/308 重定向：{} ✅/❌
 - 双 {locale} 前缀 → 404：{} ✅/❌
+
+**性能（移动端 Lighthouse / PSI）：**
+- Performance Score：{} / 100 ✅/❌ (≥ 90)
+- LCP：{} s ✅/❌ (≤ 2.5)
+- FCP：{} s (≤ 1.8)
+- TBT：{} ms (≤ 200)
+- CLS：{} ✅/❌ (≤ 0.10)
+- TTFB：{} s (≤ 0.8)
+- 字段数据 CrUX：{} (fast / average / slow)
 
 **修复建议：** {如有问题列出}
 ```
@@ -679,4 +688,87 @@ done
 <meta property="og:description" content={description} />
 <meta property="og:image" content={image} />
 <meta name="twitter:card" content="summary_large_image" />
+```
+
+### Step 15：性能检查（Lighthouse / PageSpeed Insights）（新增）
+
+性能（Core Web Vitals + Lighthouse 实验室指标）是 Google「页面体验」排名信号，检查时**以移动端为主**（可另跑 desktop 对比）。Google 服务（`googleapis.com` / `pagespeed.web.dev`）不可达时，用本地 Chrome Lighthouse 审计（方式 B），线上域名不可解析时可直接审计本地 `dist` 构建产物。
+
+#### 15.1 指标体系与达标阈值
+
+| 指标 | 全称 | 良好 ✅ | 需改进 ⚠️ | 差 ❌ | 说明 |
+|------|------|--------|----------|------|------|
+| Perf Score | Lighthouse Performance Score | ≥ 90 | 50–89 | ≤ 49 | 综合得分（移动端权重） |
+| LCP | Largest Contentful Paint | ≤ 2.5 s | 2.5–4.0 s | > 4.0 s | 最大内容绘制，**CWV 核心** |
+| INP | Interaction to Next Paint | ≤ 200 ms | 200–500 ms | > 500 ms | 交互延迟，CWV 之一（2024 起替代 FID） |
+| CLS | Cumulative Layout Shift | ≤ 0.10 | 0.10–0.25 | > 0.25 | 布局偏移，**CWV 核心** |
+| FCP | First Contentful Paint | ≤ 1.8 s | 1.8–3.0 s | > 3.0 s | 首次内容绘制 |
+| TBT | Total Blocking Time | ≤ 200 ms | 200–600 ms | > 600 ms | 主线程总阻塞时间（移动端权重高） |
+| SI | Speed Index | ≤ 3.4 s | 3.4–5.8 s | > 5.8 s | 视觉呈现速度 |
+| TTFB | Time To First Byte | ≤ 0.8 s | 0.8–1.8 s | > 1.8 s | 服务器响应（辅助信号，非评分项） |
+
+**字段数据（CrUX 真实用户）分档：** `fast`（三项核心指标均 good）→ `average` → `slow`。Lighthouse/PSI 页面同时给出「实验室」与「字段」两组数据，实验室不达标可修复，字段不达标说明线上真实体验差。
+
+#### 15.2 方式 A：PageSpeed Insights API（需可访问 googleapis.com）
+
+```bash
+# mobile 优先；需要时另跑 strategy=desktop
+curl -s --max-time 120 "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=mobile&category=performance&category=seo" -o psi-mobile.json
+# 匿名限额极低；建议在项目 .env 配置 GOOGLE_PSI_API_KEY 后追加 &key=$GOOGLE_PSI_API_KEY
+```
+
+#### 15.3 方式 B：本地 Chrome Lighthouse（推荐，无 Google 依赖）
+
+```bash
+# 线上 URL 审计（自动探测本机 Chrome）
+npx -y lighthouse "$BASE" --only-categories=performance --form-factor=mobile \
+  --output=json --output-path=./lh-mobile.json --quiet
+
+# 线上不可达/域名未解析 → 审计本地 dist：
+# 1) 站点目录构建并起静态服务器（任选其一）
+#    cd /path/to/site && npm run build
+#    npx -y serve dist     # 或 python -m http.server 4173 -d dist
+# 2) 审计本地地址
+npx -y lighthouse "http://127.0.0.1:4173/" --only-categories=performance --form-factor=mobile \
+  --output=json --output-path=./lh-mobile.json --quiet
+
+# 无头/CI 环境追加：--chrome-flags="--headless=new --no-sandbox"
+# desktop 对照：--form-factor=desktop --screenEmulation.mobile=false
+```
+
+#### 15.4 解析结果并汇总
+
+```bash
+node -e "
+const r=require('./lh-mobile.json');
+const v=(id)=>r.audits[id]?.displayValue||'n/a';
+const c=r.categories.performance;
+const lab={score:Math.round(c.score*100),
+  LCP:v('largest-contentful-paint'),FCP:v('first-contentful-paint'),
+  TBT:v('total-blocking-time'),CLS:v('cumulative-layout-shift'),
+  SI:v('speed-index'),TTFB:v('server-response-time'),
+  INP:r.audits['interaction-to-next-paint']?v('interaction-to-next-paint'):'n/a(实验室)'};
+console.log(JSON.stringify(lab,null,2));
+console.log('CrUX 字段数据:', r.loadingExperience?.overall_category ?? '无');
+"
+# PSI JSON 同结构（字段在 lighthouseResult.* 与 loadingExperience）
+```
+
+**关键审计项（audit id）与常见修复：**
+
+| 审计项 | 常见根因 | 修复方式 |
+|--------|----------|----------|
+| LCP 元素加载慢 | hero 图未优化/未预加载、TTFB 慢、关键资源阻塞 | 图片转 webp/avif 并压缩；LCP 图加 `fetchpriority="high"` + `<link rel="preload" as="image">`；非视口图 `loading="lazy"`；关键 CSS 内联/提前 |
+| CLS | 图片/iframe/字体无占位、顶部动态插入 | 媒体元素固定宽高或 `aspect-ratio` 占位；字体 `font-display: swap`；预留广告/横幅空间 |
+| TBT / INP 高 | 大 JS bundle、长任务、组件过度水合 | 代码分割按需加载；Astro 静态优先、减少水合；第三方脚本 defer/延迟；长任务拆分 |
+| TTFB 慢 | 回源慢、无缓存、未压缩 | Cloudflare 页面缓存；`_headers` 配 Cache-Control；开启 Brotli 压缩 |
+| 图片未优化 | 体积大/格式老 | 批量转 webp 压缩；尺寸与展示一致；子集化字体 |
+
+**缓存头示例（Astro `public/_headers`）：**
+
+```
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/og/*.png
+  Cache-Control: public, max-age=86400
 ```
