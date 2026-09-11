@@ -1,8 +1,8 @@
 ---
 name: performance-check
 description: >-
-  站点性能专项检查技能（Core Web Vitals + Lighthouse）。对给定 URL 跑 PageSpeed Insights API（方式 A，需 API Key）或本地 Chrome Lighthouse（方式 B），输出 Performance/SEO 得分、LCP/INP/CLS/FCP/TBT/SI/TTFB、CrUX 字段数据与优化机会清单，并对照阈值判定。适用于每次性能优化后单独复测。触发词：性能检查、测试性能、性能测试、跑性能、复测性能、performance check、PageSpeed、Lighthouse。
-version: 1.0.1
+  站点性能专项检查技能（Core Web Vitals + Lighthouse）。对给定**线上 URL** 跑 PageSpeed Insights API（方式 A，需 API Key）或本机 Chrome Lighthouse（方式 B），输出 Performance/SEO 得分、LCP/INP/CLS/FCP/TBT/SI/TTFB、CrUX 字段数据与优化机会清单，并对照阈值判定。适用于每次性能优化后单独复测。触发词：性能检查、测试性能、性能测试、跑性能、复测性能、performance check、PageSpeed、Lighthouse。
+version: 1.0.2
 metadata:
   hermes:
     tags: [performance, core-web-vitals, lighthouse, pagespeed, daily-check]
@@ -18,12 +18,13 @@ metadata:
 ## 核心原则
 
 - **默认移动端**（可另跑 desktop 对照）。
-- **优先方式 A（PSI API，Google 真实环境）**；若 Google 不可达或需要无依赖复测，用**方式 B（本地 Chrome Lighthouse）**。线上域名不可解析时，方式 B 可审计本地 `dist`。
+- **只测线上 URL**，不做本地构建 / `dist` / localhost 审计。
+- **优先方式 A（PSI API，Google 真实环境）**；若 Google 不可达，用**方式 B（本机 Chrome 跑 Lighthouse，目标仍为线上 URL）**。
 - 结果必须对照阈值给出 ✅/⚠️/❌ 判定，并列出优化机会。
 
 ## 输入
 
-- **目标 URL**：线上 `https://...`，或本地 `http://127.0.0.1:4173/`（配合 `dist`）。
+- **目标 URL**：线上 `https://...`（仅线上，不接受 `localhost` / 本地 `dist`）。
 
 ## 准备：加载 API Key（仅方式 A 需要）
 
@@ -54,21 +55,17 @@ curl -s --max-time 150 "https://pagespeedonline.googleapis.com/pagespeedonline/v
 - 额度：默认约 **25,000 次/天/项目**（PST 午夜重置）；单 strategy=1 unit，mobile+desktop 各一次=2 units；多 category 不额外计费；超额 429 用指数退避重试。
 - 期望返回 `HTTP:200`；返回 `429` 说明未带 Key 或额度耗尽。
 
-## 方式 B：本地 Chrome Lighthouse（无 Google 依赖）
+## 方式 B：本机 Chrome Lighthouse（无 Google 依赖，目标仍为线上 URL）
 
 ```bash
 # 审计线上 URL（自动探测本机 Chrome）
 npx -y lighthouse "$BASE" --only-categories=performance,seo --form-factor=mobile \
   --output=json --output-path=./lh-mobile.json --quiet --chrome-flags="--headless=new --no-sandbox"
 
-# 线上不可达 / 域名未解析 → 审计本地 dist：
-#   cd <站点目录> && npm run build
-#   npx -y serve dist        # 或 python -m http.server 4173 -d dist
-npx -y lighthouse "http://127.0.0.1:4173/" --only-categories=performance,seo --form-factor=mobile \
-  --output=json --output-path=./lh-mobile.json --quiet --chrome-flags="--headless=new --no-sandbox"
-
 # desktop 对照：--form-factor=desktop --screenEmulation.mobile=false
 ```
+
+> 仅审计**线上 URL**；**不审计本地 dist / localhost**。方式 A 不可达时用本方式，仍直接对线上域名跑。
 
 ## 解析结果
 
@@ -137,7 +134,7 @@ node scripts/report.js psi-mobile.json     # 或 lh-mobile.json
 
 ## 注意事项
 
-- 同一站点不同环境下（本地 vs Google）分数会有差异，属正常；**看趋势与失分项，而非绝对分**。
+- 同一站点两次测试（方式 A vs 方式 B）分数会有差异，属正常；**看趋势与失分项，而非绝对分**。
 - LCP 的"观察值分解"与最终展示值可能因节流不同而差异较大，以展示值判定、以分解定位瓶颈。
 - CrUX 无数据是正常（流量不足），不要当作错误。
 - 结果 JSON 与解析脚本输出可留存对比；临时文件用完可清理。
