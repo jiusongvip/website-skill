@@ -1,8 +1,8 @@
 ---
 name: performance-check
 description: >-
-  站点性能专项检查技能（Core Web Vitals + Lighthouse）。对给定**线上 URL** 跑 PageSpeed Insights API（方式 A，需 API Key）或本机 Chrome Lighthouse（方式 B），输出 Performance/SEO 得分、LCP/INP/CLS/FCP/TBT/SI/TTFB、CrUX 字段数据与优化机会清单，并对照阈值判定。适用于每次性能优化后单独复测。触发词：性能检查、测试性能、性能测试、跑性能、复测性能、performance check、PageSpeed、Lighthouse。
-version: 1.0.2
+  站点性能专项检查技能（Core Web Vitals + PageSpeed Insights）。对给定**线上 URL** 通过 PageSpeed Insights API（**必须携带 API Key**，仅此一种方式）测试，输出 Performance/SEO 得分、LCP/INP/CLS/FCP/TBT/SI/TTFB、CrUX 字段数据与优化机会清单，并对照阈值判定。适用于每次性能优化后单独复测。触发词：性能检查、测试性能、性能测试、跑性能、复测性能、performance check、PageSpeed。
+version: 1.1.0
 metadata:
   hermes:
     tags: [performance, core-web-vitals, lighthouse, pagespeed, daily-check]
@@ -17,16 +17,16 @@ metadata:
 
 ## 核心原则
 
+- **只用 PageSpeed Insights API（携带 API Key）测试**；**禁止本地 Lighthouse / 本地构建审计**。
 - **默认移动端**（可另跑 desktop 对照）。
 - **只测线上 URL**，不做本地构建 / `dist` / localhost 审计。
-- **优先方式 A（PSI API，Google 真实环境）**；若 Google 不可达，用**方式 B（本机 Chrome 跑 Lighthouse，目标仍为线上 URL）**。
 - 结果必须对照阈值给出 ✅/⚠️/❌ 判定，并列出优化机会。
 
 ## 输入
 
 - **目标 URL**：线上 `https://...`（仅线上，不接受 `localhost` / 本地 `dist`）。
 
-## 准备：加载 API Key（仅方式 A 需要）
+## 准备：加载 API Key（必需）
 
 API Key 存于**本技能目录**的 `.env`（`performance-check/.env`，与 `technology-seo-check` 相互独立、互不依赖；已被 `.gitignore` 的 `*.env` 忽略，勿提交）。调用前先加载到环境变量 `GOOGLE_PSI_API_KEY`：
 
@@ -41,38 +41,30 @@ Get-Content .env | Where-Object { $_ -match '^GOOGLE_PSI_API_KEY=' } | ForEach-O
 ```
 
 > 匿名调用每日额度为 **0**（实测返回 429 `RESOURCE_EXHAUSTED`），**必须携带 API Key**。
+>
+> **网络代理（重要）：** 本机访问 Google 需经本地代理（`http://127.0.0.1:7897`，即环境变量 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`）。**不走代理会连接超时（`socket hang up`），易被误判为「额度耗尽」**。`curl` 会自动读取 `HTTPS_PROXY`、也可显式 `--proxy`；而 Node `https.get` **默认不走代理**，需显式配 agent，或改用 `curl` / PowerShell `Invoke-WebRequest`。
 
-## 方式 A：PageSpeed Insights API
+## 测试方式：PageSpeed Insights API（唯一方式）
 
 ```bash
 BASE="https://www.example.com"   # 换成目标 URL
-curl -s --max-time 150 "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=MOBILE&category=PERFORMANCE&category=SEO&locale=zh-CN&key=${GOOGLE_PSI_API_KEY}" -o psi-mobile.json -w "HTTP:%{http_code} SIZE:%{size_download}\n"
+# 访问 Google 需经本地代理：curl 自动读 HTTPS_PROXY，亦可显式 --proxy
+curl -s --max-time 150 --proxy "${HTTPS_PROXY:-http://127.0.0.1:7897}" "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=MOBILE&category=PERFORMANCE&category=SEO&locale=zh-CN&key=${GOOGLE_PSI_API_KEY}" -o psi-mobile.json -w "HTTP:%{http_code} SIZE:%{size_download}\n"
 # desktop 对照：strategy=DESKTOP
 ```
 
 - 请求：`GET`，正文为空；入口 `pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed`（[官方文档](https://developers.google.com/speed/docs/insights/rest/v5/pagespeedapi/runpagespeed?hl=zh-cn)）。
 - 关键参数：`url`（必需）、`strategy`（`MOBILE`/`DESKTOP`，默认 DESKTOP）、`category`（可重复）、`locale`、`key`。
 - 额度：默认约 **25,000 次/天/项目**（PST 午夜重置）；单 strategy=1 unit，mobile+desktop 各一次=2 units；多 category 不额外计费；超额 429 用指数退避重试。
-- 期望返回 `HTTP:200`；返回 `429` 说明未带 Key 或额度耗尽。
-
-## 方式 B：本机 Chrome Lighthouse（无 Google 依赖，目标仍为线上 URL）
-
-```bash
-# 审计线上 URL（自动探测本机 Chrome）
-npx -y lighthouse "$BASE" --only-categories=performance,seo --form-factor=mobile \
-  --output=json --output-path=./lh-mobile.json --quiet --chrome-flags="--headless=new --no-sandbox"
-
-# desktop 对照：--form-factor=desktop --screenEmulation.mobile=false
-```
-
-> 仅审计**线上 URL**；**不审计本地 dist / localhost**。方式 A 不可达时用本方式，仍直接对线上域名跑。
+- 期望返回 `HTTP:200`；返回 `429` 说明未带 Key 或额度耗尽；**超时 / 连接错误（`socket hang up`）≠ 额度耗尽**，先查代理。
+- **代理：** 需经本地代理（`http://127.0.0.1:7897`）；Node 原生 `https` 不走代理，判额度 / 调用建议用 `curl` 或 PowerShell `Invoke-WebRequest`（自动读系统代理）。
 
 ## 解析结果
 
-对本技能自带的解析脚本运行（同时兼容 PSI 与 Lighthouse 两种 JSON）：
+对本技能自带的解析脚本运行（解析 PSI 返回的 JSON）：
 
 ```bash
-node scripts/report.js psi-mobile.json     # 或 lh-mobile.json
+node scripts/report.js psi-mobile.json
 ```
 
 脚本输出：各项指标、LCP 分解、优化机会（opportunity）、体积类建议（`*-insight`）。PSI JSON 的实验室数据在 `lighthouseResult.*`，字段数据在 `loadingExperience`。
@@ -134,7 +126,9 @@ node scripts/report.js psi-mobile.json     # 或 lh-mobile.json
 
 ## 注意事项
 
-- 同一站点两次测试（方式 A vs 方式 B）分数会有差异，属正常；**看趋势与失分项，而非绝对分**。
+- 同一站点多次测试分数会有小幅波动，属正常；**看趋势与失分项，而非绝对分**。
+- **只提供 PSI API（携带 Key）方式**，不含本地 Lighthouse；PSI 报错先查代理与 Key，勿回退本地测。
 - LCP 的"观察值分解"与最终展示值可能因节流不同而差异较大，以展示值判定、以分解定位瓶颈。
 - CrUX 无数据是正常（流量不足），不要当作错误。
 - 结果 JSON 与解析脚本输出可留存对比；临时文件用完可清理。
+- **代理与超时：** 直连 Google 会超时（`socket hang up`），属代理问题而非额度问题——`curl` 加 `--proxy` 或依赖 `HTTPS_PROXY`，PowerShell `Invoke-WebRequest` 自动读系统代理；**判定额度以 200 / 429 为准，不看超时**。

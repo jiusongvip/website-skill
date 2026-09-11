@@ -1,8 +1,8 @@
 ---
 name: site-seo-check
 description: >-
-  通用线上技术SEO审计技能，适配所有网站。curl线上页面审计基础信号(title长度/desc长度/H1唯一/H2≥2/H3不跳级/alt/OG社交标签/robots.txt/sitemap)、性能检查(CWV/Lighthouse/PageSpeed)、文本重复、分页title、canonical尾斜杠、www重定向、内页抽样、内部链接尾斜杠。用户提供域名。触发词：SEO检查、网站SEO、seo check、技术SEO。
-version: 1.4.2
+  通用线上技术SEO审计技能，适配所有网站。curl线上页面审计基础信号(title长度/desc长度/H1唯一/H2≥2/H3不跳级/alt/OG社交标签/robots.txt/sitemap)、性能检查(CWV/PageSpeed Insights)、文本重复、分页title、canonical尾斜杠、www重定向、内页抽样、内部链接尾斜杠。用户提供域名。触发词：SEO检查、网站SEO、seo check、技术SEO。
+version: 1.5.0
 metadata:
   hermes:
     tags: [seo, tech-seo, keyword-density, daily-check]
@@ -266,7 +266,7 @@ done
 - 无尾斜杠 → 301/308 重定向：{} ✅/❌
 - 双 {locale} 前缀 → 404：{} ✅/❌
 
-**性能（移动端 Lighthouse / PSI）：**
+**性能（移动端 PSI）：**
 - Performance Score：{} / 100 ✅/❌ (≥ 90)
 - LCP：{} s ✅/❌ (≤ 2.5)
 - FCP：{} s (≤ 1.8)
@@ -692,7 +692,7 @@ done
 
 ### Step 15：性能检查（Lighthouse / PageSpeed Insights）（新增）
 
-性能（Core Web Vitals + Lighthouse 实验室指标）是 Google「页面体验」排名信号，检查时**以移动端为主**（可另跑 desktop 对比）。Google 服务（`pagespeedonline.googleapis.com` / `pagespeed.web.dev`）不可达时，用本地 Chrome Lighthouse 审计（方式 B），线上域名不可解析时可直接审计本地 `dist` 构建产物。
+性能（Core Web Vitals + PageSpeed Insights）是 Google「页面体验」排名信号，检查时**以移动端为主**（可另跑 desktop 对比）。**统一使用 PageSpeed Insights API（必须携带 API Key）**；不使用本地 Lighthouse / 本地构建审计。
 
 #### 15.1 指标体系与达标阈值
 
@@ -709,7 +709,7 @@ done
 
 **字段数据（CrUX 真实用户）分档：** `fast`（三项核心指标均 good）→ `average` → `slow`。Lighthouse/PSI 页面同时给出「实验室」与「字段」两组数据，实验室不达标可修复，字段不达标说明线上真实体验差。
 
-#### 15.2 方式 A：PageSpeed Insights API（需可访问 pagespeedonline.googleapis.com）
+#### 15.2 PageSpeed Insights API（唯一方式，需可访问 pagespeedonline.googleapis.com）
 
 对齐官方接口：[Method: pagespeedapi.runpagespeed](https://developers.google.com/speed/docs/insights/rest/v5/pagespeedapi/runpagespeed?hl=zh-cn)。
 
@@ -732,7 +732,8 @@ GET https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed
 
 ```bash
 # 文档对齐写法：pagespeedonline.googleapis.com 入口 + 大写枚举 + locale + API Key
-curl -s --max-time 120 "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=MOBILE&category=PERFORMANCE&category=SEO&locale=zh-CN&key=${GOOGLE_PSI_API_KEY}" -o psi-mobile.json
+# 访问 Google 需经本地代理（curl 自动读 HTTPS_PROXY，亦可显式 --proxy）
+curl -s --max-time 120 --proxy "${HTTPS_PROXY:-http://127.0.0.1:7897}" "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=MOBILE&category=PERFORMANCE&category=SEO&locale=zh-CN&key=${GOOGLE_PSI_API_KEY}" -o psi-mobile.json
 # desktop 对照：strategy=DESKTOP
 
 # === API Key 配置（重要）===
@@ -747,6 +748,8 @@ curl -s --max-time 120 "https://pagespeedonline.googleapis.com/pagespeedonline/v
 # 3) 鉴权替代：对照文档「授权范围」，亦支持 OAuth 范围 openid
 ```
 
+**网络代理（重要）：** 本机访问 `pagespeedonline.googleapis.com` 必须经本地代理（`http://127.0.0.1:7897`，即环境变量 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`）。**不走代理会连接超时（`socket hang up`），勿误判为「额度耗尽」**。`curl` 会自动读取 `HTTPS_PROXY`、也可显式 `--proxy`；而 Node `https.get` **默认不走代理**（需显式配 proxy agent，或改用 `curl` / PowerShell `Invoke-WebRequest`）。
+
 **API Key 获取与额度：**
 
 | 项 | 说明 |
@@ -759,30 +762,12 @@ curl -s --max-time 120 "https://pagespeedonline.googleapis.com/pagespeedonline/v
 | 超额处理 | 返回 429 RESOURCE_EXHAUSTED，用指数退避重试（1s→2s→4s…），勿立即重发 |
 | 安全 | Key 属敏感凭证，仅存本地 .env / 环境变量，**禁止提交仓库或写入本文件** |
 
-#### 15.3 方式 B：本地 Chrome Lighthouse（推荐，无 Google 依赖）
-
-```bash
-# 线上 URL 审计（自动探测本机 Chrome）
-npx -y lighthouse "$BASE" --only-categories=performance --form-factor=mobile \
-  --output=json --output-path=./lh-mobile.json --quiet
-
-# 线上不可达/域名未解析 → 审计本地 dist：
-# 1) 站点目录构建并起静态服务器（任选其一）
-#    cd /path/to/site && npm run build
-#    npx -y serve dist     # 或 python -m http.server 4173 -d dist
-# 2) 审计本地地址
-npx -y lighthouse "http://127.0.0.1:4173/" --only-categories=performance --form-factor=mobile \
-  --output=json --output-path=./lh-mobile.json --quiet
-
-# 无头/CI 环境追加：--chrome-flags="--headless=new --no-sandbox"
-# desktop 对照：--form-factor=desktop --screenEmulation.mobile=false
-```
-
-#### 15.4 解析结果并汇总
+#### 15.3 解析结果并汇总
 
 ```bash
 node -e "
-const r=require('./lh-mobile.json');
+const raw=require('./psi-mobile.json');
+const r=raw.lighthouseResult||raw;
 const v=(id)=>r.audits[id]?.displayValue||'n/a';
 const c=r.categories.performance;
 const lab={score:Math.round(c.score*100),
@@ -791,9 +776,9 @@ const lab={score:Math.round(c.score*100),
   SI:v('speed-index'),TTFB:v('server-response-time'),
   INP:r.audits['interaction-to-next-paint']?v('interaction-to-next-paint'):'n/a(实验室)'};
 console.log(JSON.stringify(lab,null,2));
-console.log('CrUX 字段数据:', r.loadingExperience?.overall_category ?? '无');
+console.log('CrUX 字段数据:', raw.loadingExperience?.overall_category ?? '无');
 "
-# PSI JSON 同结构（字段在 lighthouseResult.* 与 loadingExperience）
+# PSI 的实验室数据在 lighthouseResult.*，字段数据在 loadingExperience
 ```
 
 **关键审计项（audit id）与常见修复：**
