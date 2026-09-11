@@ -1,8 +1,8 @@
 ---
 name: performance-check
 description: >-
-  站点性能专项检查技能（Core Web Vitals + PageSpeed Insights）。对给定**线上 URL** 通过 PageSpeed Insights API（**必须携带 API Key**，仅此一种方式）测试，输出 Performance/SEO 得分、LCP/INP/CLS/FCP/TBT/SI/TTFB、CrUX 字段数据与优化机会清单，并对照阈值判定。适用于每次性能优化后单独复测。触发词：性能检查、测试性能、性能测试、跑性能、复测性能、performance check、PageSpeed。
-version: 1.1.0
+  站点性能专项检查技能（Core Web Vitals + PageSpeed Insights）。对给定**线上 URL** 通过 PageSpeed Insights API（**必须携带 API Key**，仅此一种方式）测试，输出 Performance/无障碍/最佳做法/SEO 得分、LCP/INP/CLS/FCP/TBT/SI/TTFB、CrUX 字段数据与优化机会清单，并对照阈值判定。适用于每次性能优化后单独复测。触发词：性能检查、测试性能、性能测试、跑性能、复测性能、performance check、PageSpeed。
+version: 1.2.0
 metadata:
   hermes:
     tags: [performance, core-web-vitals, lighthouse, pagespeed, daily-check]
@@ -49,12 +49,12 @@ Get-Content .env | Where-Object { $_ -match '^GOOGLE_PSI_API_KEY=' } | ForEach-O
 ```bash
 BASE="https://www.example.com"   # 换成目标 URL
 # 访问 Google 需经本地代理：curl 自动读 HTTPS_PROXY，亦可显式 --proxy
-curl -s --max-time 150 --proxy "${HTTPS_PROXY:-http://127.0.0.1:7897}" "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=MOBILE&category=PERFORMANCE&category=SEO&locale=zh-CN&key=${GOOGLE_PSI_API_KEY}" -o psi-mobile.json -w "HTTP:%{http_code} SIZE:%{size_download}\n"
+curl -s --max-time 150 --proxy "${HTTPS_PROXY:-http://127.0.0.1:7897}" "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=MOBILE&category=PERFORMANCE&category=ACCESSIBILITY&category=BEST_PRACTICES&category=SEO&locale=zh-CN&key=${GOOGLE_PSI_API_KEY}" -o psi-mobile.json -w "HTTP:%{http_code} SIZE:%{size_download}\n"
 # desktop 对照：strategy=DESKTOP
 ```
 
 - 请求：`GET`，正文为空；入口 `pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed`（[官方文档](https://developers.google.com/speed/docs/insights/rest/v5/pagespeedapi/runpagespeed?hl=zh-cn)）。
-- 关键参数：`url`（必需）、`strategy`（`MOBILE`/`DESKTOP`，默认 DESKTOP）、`category`（可重复）、`locale`、`key`。
+- 关键参数：`url`（必需）、`strategy`（`MOBILE`/`DESKTOP`，默认 DESKTOP）、`category`（可重复，现值四类：`PERFORMANCE`/`ACCESSIBILITY`/`BEST_PRACTICES`/`SEO`）、`locale`、`key`。
 - 额度：默认约 **25,000 次/天/项目**（PST 午夜重置）；单 strategy=1 unit，mobile+desktop 各一次=2 units；多 category 不额外计费；超额 429 用指数退避重试。
 - 期望返回 `HTTP:200`；返回 `429` 说明未带 Key 或额度耗尽；**超时 / 连接错误（`socket hang up`）≠ 额度耗尽**，先查代理。
 - **代理：** 需经本地代理（`http://127.0.0.1:7897`）；Node 原生 `https` 不走代理，判额度 / 调用建议用 `curl` 或 PowerShell `Invoke-WebRequest`（自动读系统代理）。
@@ -67,7 +67,7 @@ curl -s --max-time 150 --proxy "${HTTPS_PROXY:-http://127.0.0.1:7897}" "https://
 node scripts/report.js psi-mobile.json
 ```
 
-脚本输出：各项指标、LCP 分解、优化机会（opportunity）、体积类建议（`*-insight`）。PSI JSON 的实验室数据在 `lighthouseResult.*`，字段数据在 `loadingExperience`。
+脚本输出：四类得分（Performance/无障碍/最佳做法/SEO）、各项指标、LCP 分解、优化机会（opportunity）、体积类建议（`*-insight`）。PSI JSON 的实验室数据在 `lighthouseResult.*`，字段数据在 `loadingExperience`。
 
 ## 达标阈值（移动端）
 
@@ -94,6 +94,9 @@ node scripts/report.js psi-mobile.json
 | 指标 | 结果 | 阈值 | 判定 |
 |------|------|------|------|
 | Performance | {} / 100 | ≥ 90 | ✅/⚠️/❌ |
+| 无障碍 Accessibility | {} / 100 | ≥ 90 | ✅/⚠️/❌ |
+| 最佳做法 Best Practices | {} / 100 | ≥ 90 | ✅/⚠️/❌ |
+| SEO | {} / 100 | ≥ 90 | ✅/⚠️/❌ |
 | LCP | {} s | ≤ 2.5 | ✅/⚠️/❌ |
 | INP | {} ms | ≤ 200 | ✅/⚠️/❌ |
 | CLS | {} | ≤ 0.10 | ✅/⚠️/❌ |

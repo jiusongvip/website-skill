@@ -41,6 +41,8 @@ console.log(
       formFactor: lr.configSettings && lr.configSettings.formFactor,
       fetchTime: lr.fetchTime,
       Performance: score('performance'),
+      Accessibility: score('accessibility'),
+      'Best Practices': score('best-practices'),
       SEO: score('seo'),
       LCP: disp('largest-contentful-paint'),
       INP: audits['interaction-to-next-paint'] ? disp('interaction-to-next-paint') : 'n/a(实验室不含)',

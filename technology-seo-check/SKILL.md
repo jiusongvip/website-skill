@@ -1,8 +1,8 @@
 ---
 name: site-seo-check
 description: >-
-  通用线上技术SEO审计技能，适配所有网站。curl线上页面审计基础信号(title长度/desc长度/H1唯一/H2≥2/H3不跳级/alt/OG社交标签/robots.txt/sitemap)、性能检查(CWV/Lighthouse/PageSpeed)、文本重复、分页title、canonical尾斜杠、www重定向、内页抽样、内部链接尾斜杠。用户提供域名。触发词：SEO检查、网站SEO、seo check、技术SEO。
-version: 1.6.0
+  通用线上技术SEO审计技能，适配所有网站。curl线上页面审计基础信号(title长度/desc长度/H1唯一/H2≥2/H3不跳级/alt/OG社交标签/robots.txt/sitemap)、性能与质量检查(CWV/无障碍/最佳做法/SEO/智能体浏览)、文本重复、分页title、canonical尾斜杠、www重定向、内页抽样、内部链接尾斜杠。用户提供域名。触发词：SEO检查、网站SEO、seo check、技术SEO。
+version: 1.7.0
 metadata:
   hermes:
     tags: [seo, tech-seo, keyword-density, daily-check]
@@ -266,8 +266,12 @@ done
 - 无尾斜杠 → 301/308 重定向：{} ✅/❌
 - 双 {locale} 前缀 → 404：{} ✅/❌
 
-**性能（移动端 Lighthouse / PSI）：**
+**性能与质量（移动端 Lighthouse / PSI）：**
 - Performance Score：{} / 100 ✅/❌ (≥ 90)
+- 无障碍 Accessibility：{} / 100 ✅/❌ (≥ 90)
+- 最佳做法 Best Practices：{} / 100 (≥ 90)
+- SEO：{} / 100 (≥ 90)
+- 智能体浏览 Agentic Browsing：{} (仅本地 Lighthouse 13.3+，PSI 无此类目；fraction 比例)
 - LCP：{} s ✅/❌ (≤ 2.5)
 - FCP：{} s (≤ 1.8)
 - TBT：{} ms (≤ 200)
@@ -690,9 +694,9 @@ done
 <meta name="twitter:card" content="summary_large_image" />
 ```
 
-### Step 15：性能检查（Lighthouse / PageSpeed Insights）（新增）
+### Step 15：性能与质量检查（Lighthouse / PageSpeed Insights）（含无障碍/最佳做法/SEO/智能体浏览）
 
-性能（Core Web Vitals + Lighthouse 实验室指标）是 Google「页面体验」排名信号，检查时**以移动端为主**（可另跑 desktop 对比）。Google 服务（`pagespeedonline.googleapis.com` / `pagespeed.web.dev`）不可达时，用本地 Chrome Lighthouse 审计（方式 B），线上域名不可解析时可直接审计本地 `dist` 构建产物。
+性能（Core Web Vitals + Lighthouse 实验室指标）是 Google「页面体验」排名信号，检查时**以移动端为主**（可另跑 desktop 对比）。除性能外，一并检查 **无障碍（Accessibility）、最佳做法（Best Practices）、SEO** 三类（PSI 与本地 Lighthouse 均支持），以及 **智能体浏览（Agentic Browsing，仅本地 Lighthouse 13.3+ 支持，PSI API 无此类目）**。Google 服务（`pagespeedonline.googleapis.com` / `pagespeed.web.dev`）不可达时，用本地 Chrome Lighthouse 审计（方式 B），线上域名不可解析时可直接审计本地 `dist` 构建产物。
 
 #### 15.1 指标体系与达标阈值
 
@@ -708,6 +712,8 @@ done
 | TTFB | Time To First Byte | ≤ 0.8 s | 0.8–1.8 s | > 1.8 s | 服务器响应（辅助信号，非评分项） |
 
 **字段数据（CrUX 真实用户）分档：** `fast`（三项核心指标均 good）→ `average` → `slow`。Lighthouse/PSI 页面同时给出「实验室」与「字段」两组数据，实验室不达标可修复，字段不达标说明线上真实体验差。
+
+**检查类目（除性能外）：** 一并输出 **无障碍 Accessibility、最佳做法 Best Practices、SEO** 三类得分（PSI 与本地 Lighthouse 均支持，阈值均 ≥ 90）；以及 **智能体浏览 Agentic Browsing**（仅本地 Lighthouse 13.3+，PSI 无此类目，评分为 fraction 比例，审计项含 `llms-txt`、`agent-accessibility-tree`、`webmcp-*` 与 CLS）。
 
 #### 15.2 方式 A：PageSpeed Insights API（需可访问 pagespeedonline.googleapis.com）
 
@@ -733,8 +739,9 @@ GET https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed
 ```bash
 # 文档对齐写法：pagespeedonline.googleapis.com 入口 + 大写枚举 + locale + API Key
 # 访问 Google 需经本地代理（curl 自动读 HTTPS_PROXY，亦可显式 --proxy）
-curl -s --max-time 120 --proxy "${HTTPS_PROXY:-http://127.0.0.1:7897}" "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=MOBILE&category=PERFORMANCE&category=SEO&locale=zh-CN&key=${GOOGLE_PSI_API_KEY}" -o psi-mobile.json
+curl -s --max-time 120 --proxy "${HTTPS_PROXY:-http://127.0.0.1:7897}" "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=MOBILE&category=PERFORMANCE&category=ACCESSIBILITY&category=BEST_PRACTICES&category=SEO&locale=zh-CN&key=${GOOGLE_PSI_API_KEY}" -o psi-mobile.json
 # desktop 对照：strategy=DESKTOP
+# 注意：PSI 仅支持上述 4 类；agentic-browsing（智能体浏览）仅在本地 Lighthouse 13.3+（方式 B）。
 
 # === API Key 配置（重要）===
 # 匿名调用每日额度为 0（实测返回 429 RESOURCE_EXHAUSTED, quota_limit_value="0"），必须携带 API Key。
@@ -765,8 +772,8 @@ curl -s --max-time 120 --proxy "${HTTPS_PROXY:-http://127.0.0.1:7897}" "https://
 #### 15.3 方式 B：本地 Chrome Lighthouse（推荐，无 Google 依赖）
 
 ```bash
-# 线上 URL 审计（自动探测本机 Chrome）
-npx -y lighthouse "$BASE" --only-categories=performance --form-factor=mobile \
+# 线上 URL 审计（自动探测本机 Chrome；agentic-browsing 需 Lighthouse 13.3+）
+npx -y lighthouse "$BASE" --only-categories=performance,accessibility,best-practices,seo,agentic-browsing --form-factor=mobile \
   --output=json --output-path=./lh-mobile.json --quiet
 
 # 线上不可达/域名未解析 → 审计本地 dist：
@@ -774,7 +781,7 @@ npx -y lighthouse "$BASE" --only-categories=performance --form-factor=mobile \
 #    cd /path/to/site && npm run build
 #    npx -y serve dist     # 或 python -m http.server 4173 -d dist
 # 2) 审计本地地址
-npx -y lighthouse "http://127.0.0.1:4173/" --only-categories=performance --form-factor=mobile \
+npx -y lighthouse "http://127.0.0.1:4173/" --only-categories=performance,accessibility,best-practices,seo,agentic-browsing --form-factor=mobile \
   --output=json --output-path=./lh-mobile.json --quiet
 
 # 无头/CI 环境追加：--chrome-flags="--headless=new --no-sandbox"
@@ -782,23 +789,29 @@ npx -y lighthouse "http://127.0.0.1:4173/" --only-categories=performance --form-
 ```
 
 > 方式 B 由本机 Chrome **直接访问目标站**，目标站可直连时无需代理；仅方式 A（Google 接口）必须走代理。
+>
+> **智能体浏览（agentic-browsing）** 为 Lighthouse **13.3+** 新增类目，PSI API 尚不支持；使用前确认 `npx lighthouse --version` ≥ 13.3（本机实测 13.4.1）。
 
 #### 15.4 解析结果并汇总
 
 ```bash
 node -e "
-const r=require('./lh-mobile.json');
+const raw=require('./lh-mobile.json');
+const r=raw.lighthouseResult||raw;           // 兼容 PSI（包在 lighthouseResult）与本地 Lighthouse
+const cs=r.categories||{};
+const num=(n)=>cs[n]&&cs[n].score!=null?Math.round(cs[n].score*100):'n/a';
+const frac=(n)=>cs[n]&&cs[n].score!=null?cs[n].score.toFixed(2)+' ('+cs[n].categoryScoreDisplayMode+')':'n/a';
 const v=(id)=>r.audits[id]?.displayValue||'n/a';
-const c=r.categories.performance;
-const lab={score:Math.round(c.score*100),
-  LCP:v('largest-contentful-paint'),FCP:v('first-contentful-paint'),
-  TBT:v('total-blocking-time'),CLS:v('cumulative-layout-shift'),
-  SI:v('speed-index'),TTFB:v('server-response-time'),
-  INP:r.audits['interaction-to-next-paint']?v('interaction-to-next-paint'):'n/a(实验室)'};
-console.log(JSON.stringify(lab,null,2));
-console.log('CrUX 字段数据:', r.loadingExperience?.overall_category ?? '无');
+console.log('Performance:',num('performance'),'| 无障碍:',num('accessibility'),
+  '| 最佳做法:',num('best-practices'),'| SEO:',num('seo'));
+console.log('智能体浏览(agentic-browsing, 仅本地13.3+):',frac('agentic-browsing'));
+console.log(JSON.stringify({LCP:v('largest-contentful-paint'),FCP:v('first-contentful-paint'),
+  TBT:v('total-blocking-time'),CLS:v('cumulative-layout-shift'),SI:v('speed-index'),
+  TTFB:v('server-response-time'),
+  INP:r.audits['interaction-to-next-paint']?v('interaction-to-next-paint'):'n/a(实验室)'},null,2));
+console.log('CrUX 字段数据:',(raw.loadingExperience||r.loadingExperience)?.overall_category ?? '无');
 "
-# PSI JSON 同结构（字段在 lighthouseResult.* 与 loadingExperience）
+# PSI JSON：类目在 lighthouseResult.categories、字段在顶层 loadingExperience；本地 Lighthouse 均在顶层
 ```
 
 **关键审计项（audit id）与常见修复：**
