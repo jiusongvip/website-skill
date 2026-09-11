@@ -2,7 +2,7 @@
 name: site-seo-check
 description: >-
   通用线上技术SEO审计技能，适配所有网站。curl线上页面审计基础信号(title长度/desc长度/H1唯一/H2≥2/H3不跳级/alt/OG社交标签/robots.txt/sitemap)、性能检查(CWV/Lighthouse/PageSpeed)、文本重复、分页title、canonical尾斜杠、www重定向、内页抽样、内部链接尾斜杠。用户提供域名。触发词：SEO检查、网站SEO、seo check、技术SEO。
-version: 1.4.0
+version: 1.4.2
 metadata:
   hermes:
     tags: [seo, tech-seo, keyword-density, daily-check]
@@ -692,7 +692,7 @@ done
 
 ### Step 15：性能检查（Lighthouse / PageSpeed Insights）（新增）
 
-性能（Core Web Vitals + Lighthouse 实验室指标）是 Google「页面体验」排名信号，检查时**以移动端为主**（可另跑 desktop 对比）。Google 服务（`googleapis.com` / `pagespeed.web.dev`）不可达时，用本地 Chrome Lighthouse 审计（方式 B），线上域名不可解析时可直接审计本地 `dist` 构建产物。
+性能（Core Web Vitals + Lighthouse 实验室指标）是 Google「页面体验」排名信号，检查时**以移动端为主**（可另跑 desktop 对比）。Google 服务（`pagespeedonline.googleapis.com` / `pagespeed.web.dev`）不可达时，用本地 Chrome Lighthouse 审计（方式 B），线上域名不可解析时可直接审计本地 `dist` 构建产物。
 
 #### 15.1 指标体系与达标阈值
 
@@ -709,13 +709,55 @@ done
 
 **字段数据（CrUX 真实用户）分档：** `fast`（三项核心指标均 good）→ `average` → `slow`。Lighthouse/PSI 页面同时给出「实验室」与「字段」两组数据，实验室不达标可修复，字段不达标说明线上真实体验差。
 
-#### 15.2 方式 A：PageSpeed Insights API（需可访问 googleapis.com）
+#### 15.2 方式 A：PageSpeed Insights API（需可访问 pagespeedonline.googleapis.com）
+
+对齐官方接口：[Method: pagespeedapi.runpagespeed](https://developers.google.com/speed/docs/insights/rest/v5/pagespeedapi/runpagespeed?hl=zh-cn)。
+
+**HTTP 请求（GET，请求正文必须为空）：**
+
+```
+GET https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed
+```
+
+**查询参数（对齐文档）：**
+
+| 参数 | 是否必需 | 取值 | 说明 |
+|------|----------|------|------|
+| `url` | 必需 | 目标 URL | 要抓取并分析的网址 |
+| `strategy` | 可选 | `MOBILE` / `DESKTOP` | 设备策略；文档默认 `DESKTOP`，性能检查需显式传 `MOBILE` |
+| `category` | 可选 | `PERFORMANCE` / `SEO` / `ACCESSIBILITY` / `BEST_PRACTICES` | 可重复传多个；不传仅跑效果类 |
+| `locale` | 可选 | 如 `zh-CN` | 本地化结果语言区域 |
+| `utm_campaign` / `utm_source` | 可选 | string | 分析广告系列来源/名称 |
+| `captchaToken` | 可选 | string | 通过人机识别时传递的令牌 |
 
 ```bash
-# mobile 优先；需要时另跑 strategy=desktop
-curl -s --max-time 120 "https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=mobile&category=performance&category=seo" -o psi-mobile.json
-# 匿名限额极低；建议在项目 .env 配置 GOOGLE_PSI_API_KEY 后追加 &key=$GOOGLE_PSI_API_KEY
+# 文档对齐写法：pagespeedonline.googleapis.com 入口 + 大写枚举 + locale + API Key
+curl -s --max-time 120 "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed?url=${BASE}&strategy=MOBILE&category=PERFORMANCE&category=SEO&locale=zh-CN&key=${GOOGLE_PSI_API_KEY}" -o psi-mobile.json
+# desktop 对照：strategy=DESKTOP
+
+# === API Key 配置（重要）===
+# 匿名调用每日额度为 0（实测返回 429 RESOURCE_EXHAUSTED, quota_limit_value="0"），必须携带 API Key。
+# 1) 获取：Google Cloud Console 启用「PageSpeed Insights API」并创建 API Key（凭据页）：
+#    https://console.cloud.google.com/apis/api/pagespeedonline.googleapis.com
+# 2) 存入本地环境变量（切勿将 Key 明文写入本 skill 或代码仓库）：
+#    export GOOGLE_PSI_API_KEY="<你的Key>"     # macOS/Linux
+#    $env:GOOGLE_PSI_API_KEY="<你的Key>"       # Windows PowerShell
+#    或使用本技能目录下的 .env：technology-seo-check/.env（已被 .gitignore 忽略，勿提交）
+#    使用前加载（bash）：set -a; source technology-seo-check/.env; set +a
+# 3) 鉴权替代：对照文档「授权范围」，亦支持 OAuth 范围 openid
 ```
+
+**API Key 获取与额度：**
+
+| 项 | 说明 |
+|----|------|
+| 获取方式 | Cloud Console 启用 PageSpeed Insights API → 创建 API Key（凭据页） |
+| 匿名额度 | **0 次/天**（必须带 Key，否则 429） |
+| 默认免费额度 | 约 **25,000 次/天/项目**（精确值在 Console「配额」页查） |
+| 重置时间 | **太平洋时间午夜**（PST/PDT） |
+| 单次消耗 | 1 个 strategy = 1 unit；mobile+desktop 各跑一次 = 2 units；多 category 不额外计费 |
+| 超额处理 | 返回 429 RESOURCE_EXHAUSTED，用指数退避重试（1s→2s→4s…），勿立即重发 |
+| 安全 | Key 属敏感凭证，仅存本地 .env / 环境变量，**禁止提交仓库或写入本文件** |
 
 #### 15.3 方式 B：本地 Chrome Lighthouse（推荐，无 Google 依赖）
 
