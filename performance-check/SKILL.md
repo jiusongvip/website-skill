@@ -1,8 +1,8 @@
 ---
 name: performance-check
 description: >-
-  站点性能专项检查技能（Core Web Vitals + PageSpeed Insights）。对给定**线上 URL** 通过 PageSpeed Insights API（**必须携带 API Key**，仅此一种方式）测试，输出 Performance/无障碍/最佳做法/SEO 得分、LCP/INP/CLS/FCP/TBT/SI/TTFB、CrUX 字段数据与优化机会清单，并对照阈值判定。适用于每次性能优化后单独复测。触发词：性能检查、测试性能、性能测试、跑性能、复测性能、performance check、PageSpeed。
-version: 1.2.0
+  站点性能专项检查技能（Core Web Vitals + PageSpeed Insights + 智能体浏览）。对给定**线上 URL** 用 PageSpeed Insights API（**必须携带 API Key**）测性能，输出 Performance/无障碍/最佳做法/SEO 得分、LCP/INP/CLS/FCP/TBT/SI/TTFB、CrUX 字段数据与优化机会清单；并用**本地 Lighthouse（13.3+）**检查**智能体浏览（Agentic Browsing）**，对照阈值判定。适用于每次性能优化后单独复测。触发词：性能检查、测试性能、性能测试、跑性能、复测性能、智能体浏览、performance check、PageSpeed。
+version: 1.3.0
 metadata:
   hermes:
     tags: [performance, core-web-vitals, lighthouse, pagespeed, daily-check]
@@ -17,7 +17,8 @@ metadata:
 
 ## 核心原则
 
-- **只用 PageSpeed Insights API（携带 API Key）测试**；**禁止本地 Lighthouse / 本地构建审计**。
+- **性能只用 PageSpeed Insights API（携带 API Key）测试**；**禁止用本地 Lighthouse 测性能 / 本地构建审计**。
+- **智能体浏览（Agentic Browsing）为 PSI 不支持的类目**，单独用**本地 Lighthouse（13.3+）**检查。
 - **默认移动端**（可另跑 desktop 对照）。
 - **只测线上 URL**，不做本地构建 / `dist` / localhost 审计。
 - 结果必须对照阈值给出 ✅/⚠️/❌ 判定，并列出优化机会。
@@ -44,7 +45,7 @@ Get-Content .env | Where-Object { $_ -match '^GOOGLE_PSI_API_KEY=' } | ForEach-O
 >
 > **网络代理（重要）：** 本机访问 Google 需经本地代理（`http://127.0.0.1:7897`，即环境变量 `HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`）。**不走代理会连接超时（`socket hang up`），易被误判为「额度耗尽」**。`curl` 会自动读取 `HTTPS_PROXY`、也可显式 `--proxy`；而 Node `https.get` **默认不走代理**，需显式配 agent，或改用 `curl` / PowerShell `Invoke-WebRequest`。
 
-## 测试方式：PageSpeed Insights API（唯一方式）
+## 性能测试方式：PageSpeed Insights API（唯一方式）
 
 ```bash
 BASE="https://www.example.com"   # 换成目标 URL
@@ -59,15 +60,34 @@ curl -s --max-time 150 --proxy "${HTTPS_PROXY:-http://127.0.0.1:7897}" "https://
 - 期望返回 `HTTP:200`；返回 `429` 说明未带 Key 或额度耗尽；**超时 / 连接错误（`socket hang up`）≠ 额度耗尽**，先查代理。
 - **代理：** 需经本地代理（`http://127.0.0.1:7897`）；Node 原生 `https` 不走代理，判额度 / 调用建议用 `curl` 或 PowerShell `Invoke-WebRequest`（自动读系统代理）。
 
-## 解析结果
+## 智能体浏览（Agentic Browsing）：本地 Lighthouse
 
-对本技能自带的解析脚本运行（解析 PSI 返回的 JSON）：
+> PSI API 的 `category` 枚举不含该类目，**智能体浏览只能用本地 Lighthouse（13.3+）** 检查；性能仍以上面 PSI 为准。
 
 ```bash
-node scripts/report.js psi-mobile.json
+BASE="https://www.example.com"   # 换成目标 URL
+# 本机 Chrome 直接访问目标站，无需代理；需 npx lighthouse --version ≥ 13.3
+npx -y lighthouse "$BASE" --only-categories=agentic-browsing --form-factor=mobile \
+  --output=json --output-path=./lh-agentic.json --quiet
+# 无头/CI 环境追加：--chrome-flags="--headless=new --no-sandbox"
+# desktop 对照：--form-factor=desktop --screenEmulation.mobile=false
 ```
 
-脚本输出：四类得分（Performance/无障碍/最佳做法/SEO）、各项指标、LCP 分解、优化机会（opportunity）、体积类建议（`*-insight`）。PSI JSON 的实验室数据在 `lighthouseResult.*`，字段数据在 `loadingExperience`。
+- 类目 id：**`agentic-browsing`**（Lighthouse 13.3+ 默认配置内；本机实测 13.4.1 可运行）。
+- 审计项（6 项）：`agent-accessibility-tree`、`webmcp-form-coverage`、`webmcp-registered-tools`、`webmcp-schema-validity`、`cumulative-layout-shift`、`llms-txt`。
+- 评分口径：`categoryScoreDisplayMode: 'fraction'`（比例，非百分制）；`webmcp-*` 无表单/未注册时为 `notApplicable`（权重 0，不计分）。
+- **常见失分项 `llms-txt`**：站点需提供 `/llms.txt`（返回 200），文件需含 **H1** 与**至少一个 Markdown 链接**（判定正则 `\[.+\]\(.+\)`）。**裸 URL（`- https://...`）不算链接**，须写成 `- [标题](URL)`。
+
+## 解析结果
+
+对本技能自带的解析脚本运行（同时兼容 PSI 与本地 Lighthouse 的 JSON）：
+
+```bash
+node scripts/report.js psi-mobile.json     # 性能（PSI）
+node scripts/report.js lh-agentic.json     # 智能体浏览（本地 Lighthouse）
+```
+
+脚本输出：四类得分（Performance/无障碍/最佳做法/SEO）、各项指标、LCP 分解、优化机会（opportunity）、体积类建议（`*-insight`）；对 `agentic-browsing` JSON 额外输出该类目总分与逐项审计。PSI JSON 的实验室数据在 `lighthouseResult.*`，字段数据在 `loadingExperience`。
 
 ## 达标阈值（移动端）
 
@@ -106,6 +126,12 @@ node scripts/report.js psi-mobile.json
 | TTFB | {} sf | ≤ 0.8 | ✅/⚠️/❌ |
 | CrUX 字段 | {fast/average/slow/无} | — | — |
 
+**智能体浏览（本地 Lighthouse，agentic-browsing）：** {score}（fraction，如 2/3）
+- 无障碍树 agent-accessibility-tree：{✅/❌}
+- 布局偏移 CLS：{值}
+- llms.txt：{✅/❌ + 原因}
+- WebMCP（有表单时）：{✅/❌/N/A}
+
 **优化机会（按影响排序）：** {列出节省 ms/KiB 的项}
 **结论与建议：** {1-3 条}
 ```
@@ -130,7 +156,7 @@ node scripts/report.js psi-mobile.json
 ## 注意事项
 
 - 同一站点多次测试分数会有小幅波动，属正常；**看趋势与失分项，而非绝对分**。
-- **只提供 PSI API（携带 Key）方式**，不含本地 Lighthouse；PSI 报错先查代理与 Key，勿回退本地测。
+- **性能只提供 PSI API（携带 Key）方式**，不含本地 Lighthouse 性能测试；PSI 报错先查代理与 Key，勿回退本地测性能。**智能体浏览**为 PSI 不支持的类目，单独用本地 Lighthouse（13.3+）检查。
 - LCP 的"观察值分解"与最终展示值可能因节流不同而差异较大，以展示值判定、以分解定位瓶颈。
 - CrUX 无数据是正常（流量不足），不要当作错误。
 - 结果 JSON 与解析脚本输出可留存对比；临时文件用完可清理。

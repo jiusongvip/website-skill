@@ -28,6 +28,7 @@ try {
 const lr = raw.lighthouseResult || raw;
 const cats = lr.categories || {};
 const audits = lr.audits || {};
+const acat = cats['agentic-browsing']; // 智能体浏览（仅本地 Lighthouse 13.3+ 有）
 const disp = (id) => (audits[id] && audits[id].displayValue) || 'n/a';
 const score = (name) => {
   const c = cats[name];
@@ -44,6 +45,7 @@ console.log(
       Accessibility: score('accessibility'),
       'Best Practices': score('best-practices'),
       SEO: score('seo'),
+      '智能体浏览(仅本地)': acat && acat.score != null ? acat.score : 'n/a',
       LCP: disp('largest-contentful-paint'),
       INP: audits['interaction-to-next-paint'] ? disp('interaction-to-next-paint') : 'n/a(实验室不含)',
       CLS: disp('cumulative-layout-shift'),
@@ -91,3 +93,20 @@ for (const k of Object.keys(audits)) {
   }
 }
 if (!ins) console.log('（无）');
+
+// 智能体浏览（agentic-browsing，仅本地 Lighthouse 13.3+ 有此类目）
+if (acat) {
+  console.log('\n== 智能体浏览（agentic-browsing）==');
+  console.log('category score: ' + acat.score + ' (' + acat.categoryScoreDisplayMode + ')');
+  for (const ref of acat.auditRefs || []) {
+    const a = audits[ref.id] || {};
+    const sc = a.score == null ? 'n/a ' : a.score === 1 ? 'pass' : a.score === 0 ? 'FAIL' : String(a.score);
+    console.log('[' + sc + '] w' + ref.weight + ' ' + ref.id + ' — ' + (a.title || ''));
+    if (a.displayValue) console.log('        ' + a.displayValue);
+    if (a.details && a.details.items) {
+      for (const it of a.details.items) {
+        console.log('        - ' + String(it.message || JSON.stringify(it)).slice(0, 160));
+      }
+    }
+  }
+}
