@@ -310,7 +310,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GSC 站点效果 · 近7天趋势</title>
+<title>GSC 站点效果 · 近30天趋势</title>
 <script src="https://www.gstatic.com/charts/loader.js"></script>
 <style>
 :root { color-scheme: light; }
@@ -349,6 +349,11 @@ main { flex: 1; min-width: 0; padding: 24px 32px; max-width: 1280px; }
 .alert p { margin: 4px 0; }
 .alert code { background: #fff; padding: 2px 6px; border-radius: 4px; font-size: 12px; word-break: break-all; }
 .menu-btn { display: none; background: #f1f3f4; border: 1px solid #dadce0; border-radius: 6px; font-size: 14px; cursor: pointer; color: #202124; padding: 7px 12px; align-items: center; gap: 6px; }
+.header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.range-toggle { display: inline-flex; border: 1px solid #dadce0; border-radius: 6px; overflow: hidden; }
+.range-toggle button { border: 0; background: #fff; color: #5f6368; font-size: 13px; padding: 8px 14px; cursor: pointer; font-family: inherit; }
+.range-toggle button + button { border-left: 1px solid #dadce0; }
+.range-toggle button.active { background: #1a73e8; color: #fff; }
 .title-wrap { display: flex; align-items: center; gap: 12px; }
 .mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 150; opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
 @media (max-width: 768px) {
@@ -381,11 +386,17 @@ main { flex: 1; min-width: 0; padding: 24px 32px; max-width: 1280px; }
   <div class="header-top">
     <div class="title-wrap">
       <button class="menu-btn" id="menu-btn" type="button" aria-label="站点列表">☰ 站点</button>
-      <h1>GSC 站点效果 · 近7天趋势</h1>
+      <h1>GSC 站点效果 · 近30天趋势</h1>
     </div>
-    <a class="download-btn" href="__XLSX_FILE__" download>下载详细表格数据</a>
+    <div class="header-actions">
+      <div class="range-toggle" id="range-toggle">
+        <button type="button" data-range="30" class="active">近30天</button>
+        <button type="button" data-range="7">近7天</button>
+      </div>
+      <a class="download-btn" href="__XLSX_FILE__" download>下载详细表格数据</a>
+    </div>
   </div>
-  <div class="meta">生成时间：__GENERATED_AT__ · 共 __SITE_COUNT__ 个站点 · 折线图展示每个站点近 7 天按日的展示（左轴，紫色）与点击（右轴，蓝色）</div>
+  <div class="meta">生成时间：__GENERATED_AT__ · 共 __SITE_COUNT__ 个站点 · 折线图默认展示每个站点近 30 天按日的展示（左轴，紫色）与点击（右轴，蓝色），可切换近 7 天</div>
 </header>
 <div class="mask" id="mask"></div>
 __BANNER__
@@ -398,6 +409,8 @@ __BANNER__
 </div>
 <script>
 const SITES = __SITES_JSON__;
+let currentRange = '30';   // '30' 默认展示近 30 天，可切换 '7'
+const CARDS = [];          // 每张卡片的渲染上下文，供切换时重绘
 google.charts.load('current', {packages: ['corechart']});
 google.charts.setOnLoadCallback(drawAll);
 
@@ -405,6 +418,13 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, function (c) {
     return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
   });
+}
+
+function seriesOf(site) {
+  return currentRange === '30' ? (site.daily30 || []) : (site.daily || []);
+}
+function metricsOf(site) {
+  return currentRange === '30' ? (site.m30 || {}) : (site.m7 || {});
 }
 
 function drawAll() {
@@ -428,7 +448,6 @@ function drawAll() {
     nav.appendChild(link);
     links.push(link);
 
-    const m = site.m7 || {};
     const err = site.status && site.status.indexOf('ERROR') === 0;
     const badge = err ? ' <span class="badge-error">' + escapeHtml(site.status) + '</span>' : '';
     const siteLink = site.link || ('https://' + site.name);
@@ -445,21 +464,36 @@ function drawAll() {
           intro +
         '</div>' +
         '<div class="metrics">' +
-          '<div class="metric"><b>' + m.clicks + '</b><span>点击</span></div>' +
-          '<div class="metric"><b>' + m.impressions + '</b><span>展示</span></div>' +
-          '<div class="metric"><b>' + m.ctr_pct + '%</b><span>CTR</span></div>' +
-          '<div class="metric"><b>' + m.avg_position + '</b><span>均位</span></div>' +
+          '<div class="metric"><b class="mv-clicks"></b><span>点击</span></div>' +
+          '<div class="metric"><b class="mv-imps"></b><span>展示</span></div>' +
+          '<div class="metric"><b class="mv-ctr"></b><span>CTR</span></div>' +
+          '<div class="metric"><b class="mv-pos"></b><span>均位</span></div>' +
         '</div>' +
       '</div>' +
       '<div class="chart" id="chart-' + idx + '"></div>';
     container.appendChild(card);
 
-    if (!site.daily || site.daily.length === 0) {
-      document.getElementById('chart-' + idx).outerHTML = '<div class="empty">该站点近 7 天暂无数据</div>';
+    const hasData = ((site.daily30 || []).length || (site.daily || []).length) > 0;
+    if (!hasData) {
+      document.getElementById('chart-' + idx).outerHTML = '<div class="empty">该站点暂无数据</div>';
+      const m = site.m7 || {};
+      card.querySelector('.mv-clicks').textContent = m.clicks;
+      card.querySelector('.mv-imps').textContent = m.impressions;
+      card.querySelector('.mv-ctr').textContent = m.ctr_pct + '%';
+      card.querySelector('.mv-pos').textContent = m.avg_position;
       return;
     }
-    drawSiteChart('chart-' + idx, site);
+    CARDS.push({
+      site: site,
+      chartId: 'chart-' + idx,
+      clicks: card.querySelector('.mv-clicks'),
+      imps: card.querySelector('.mv-imps'),
+      ctr: card.querySelector('.mv-ctr'),
+      pos: card.querySelector('.mv-pos'),
+    });
   });
+
+  renderAll();
 
   const observer = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
@@ -470,33 +504,62 @@ function drawAll() {
     });
   }, { rootMargin: '-25% 0px -65% 0px', threshold: 0 });
   document.querySelectorAll('.card').forEach(function (c) { observer.observe(c); });
+
+  // 近30天 / 近7天切换
+  const toggle = document.getElementById('range-toggle');
+  if (toggle) {
+    toggle.addEventListener('click', function (e) {
+      const btn = e.target.closest('button[data-range]');
+      if (!btn) return;
+      currentRange = btn.dataset.range;
+      toggle.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+      renderAll();
+    });
+  }
 }
 
-function drawSiteChart(id, site) {
+function renderAll() {
+  CARDS.forEach(function (ctx) {
+    const m = metricsOf(ctx.site);
+    ctx.clicks.textContent = m.clicks;
+    ctx.imps.textContent = m.impressions;
+    ctx.ctr.textContent = m.ctr_pct + '%';
+    ctx.pos.textContent = m.avg_position;
+    drawSiteChart(ctx.chartId, seriesOf(ctx.site));
+  });
+}
+
+function drawSiteChart(id, series) {
   const isMobile = window.innerWidth <= 768;
+  const is30 = currentRange === '30';
   const data = new google.visualization.DataTable();
   data.addColumn('string', '日期');
   data.addColumn('number', '展示');
   data.addColumn('number', '点击次数');
-  site.daily.forEach(function (d) {
-    const label = isMobile ? d.date.split('/').slice(1).join('/') : d.date;
+  series.forEach(function (d) {
+    // 30 天或移动端统一用短标签（月/日）避免拥挤
+    const label = (is30 || isMobile) ? d.date.split('/').slice(1).join('/') : d.date;
     data.addRow([label, d.impressions, d.clicks]);
   });
   const options = {
     seriesType: 'line',
     series: {
-      0: { targetAxisIndex: 0, color: '#5E35B1', lineWidth: 2, pointSize: 3 },
-      1: { targetAxisIndex: 1, color: '#4285F4', lineWidth: 2, pointSize: 3 }
+      0: { targetAxisIndex: 0, color: '#5E35B1', lineWidth: 2, pointSize: is30 ? 2 : 3 },
+      1: { targetAxisIndex: 1, color: '#4285F4', lineWidth: 2, pointSize: is30 ? 2 : 3 }
     },
     vAxes: {
       0: { format: '0', gridlines: { color: '#e0e0e0' } },
       1: { format: '0', gridlines: { color: 'transparent' } }
     },
-    hAxis: { textStyle: { fontSize: isMobile ? 11 : 12 } },
+    hAxis: {
+      textStyle: { fontSize: isMobile ? 10 : 12 },
+      slantedText: is30,
+      slantedTextAngle: 60
+    },
     legend: { position: 'top', textStyle: { fontSize: isMobile ? 12 : 13 } },
     chartArea: isMobile
-      ? { left: 44, right: 44, top: 34, bottom: 36, width: '84%', height: '64%' }
-      : { left: 70, right: 70, top: 40, bottom: 40, width: '82%', height: '70%' },
+      ? { left: 44, right: 44, top: 34, bottom: is30 ? 52 : 36, width: '84%', height: is30 ? '58%' : '64%' }
+      : { left: 70, right: 70, top: 40, bottom: is30 ? 56 : 40, width: '82%', height: is30 ? '64%' : '70%' },
     interpolateNulls: true
   };
   const chart = new google.visualization.ComboChart(document.getElementById(id));
@@ -527,17 +590,22 @@ function drawSiteChart(id, site) {
 
 def build_sites_data(stats: list) -> list:
     """把 stats 转换为前端渲染用的 sites_data 列表"""
-    sites_data = []
-    for s in sorted(stats, key=lambda x: x.get("clicks", 0), reverse=True):
-        m7 = s.get("m7", {})
-        daily = []
-        for r in s.get("daily7", []):
+    def to_series(rows):
+        series = []
+        for r in rows:
             y, m, d = r["date"].split("-")
-            daily.append({
+            series.append({
                 "date": f"{int(y)}/{int(m)}/{int(d)}",
                 "clicks": r.get("clicks", 0),
                 "impressions": r.get("impressions", 0),
             })
+        return series
+
+    sites_data = []
+    # 列表按“展示（曝光）次数”从高到低排序（默认 30 天视图，取 30 天曝光）
+    for s in sorted(stats, key=lambda x: x.get("m30", {}).get("impressions", 0) or x.get("impressions", 0), reverse=True):
+        m7 = s.get("m7", {})
+        m30 = s.get("m30", {})
         clean = short_name(s["site_url"])
         sites_data.append({
             "name": clean,
@@ -552,7 +620,14 @@ def build_sites_data(stats: list) -> list:
                 "ctr_pct": m7.get("ctr_pct", 0),
                 "avg_position": m7.get("avg_position", 0),
             },
-            "daily": daily,
+            "m30": {
+                "clicks": m30.get("clicks", 0),
+                "impressions": m30.get("impressions", 0),
+                "ctr_pct": m30.get("ctr_pct", 0),
+                "avg_position": m30.get("avg_position", 0),
+            },
+            "daily": to_series(s.get("daily7", [])),
+            "daily30": to_series(s.get("daily30", [])),
         })
     return sites_data
 
@@ -768,11 +843,14 @@ def main():
         raw = raw_intros.get(d, "")
         if raw and raw != meta.get("intro_raw", ""):
             zh = translate_to_zh(raw)
-            if zh:  # 翻译成功才更新；失败保留旧值，下次再试
+            if zh:  # 翻译成功才推进“已处理”游标；失败下次仍重试
                 meta["intro_raw"] = raw
                 meta["intro"] = zh
                 meta["intro_fetched_at"] = today
                 changed += 1
+            elif not meta.get("intro"):
+                # 翻译不可用时回退英文原文兜底，避免简介整条消失（游标不前移，下次仍会重试翻译）
+                meta["intro"] = raw
         if d in launch_dates and not meta.get("launch_date"):
             meta["launch_date"] = launch_dates[d]
     save_meta_cache(meta_cache)
@@ -794,8 +872,11 @@ def main():
             end7 = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
             start7 = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
 
-            # 近 7 天按日数据（补齐缺失日期为 0，用于 HTML 折线图）
+            # 近 7 天按日数据（补齐缺失日期为 0，用于 HTML 折线图切换）
             daily7 = build_daily_series(filter_rows_by_days(daily, 7), start7, end7)
+            # 近 30 天按日数据（补齐缺失日期为 0，HTML 折线图默认展示）
+            start30 = (datetime.now() - timedelta(days=33)).strftime("%Y-%m-%d")
+            daily30 = build_daily_series(filter_rows_by_days(daily, 30), start30, end7)
 
             result = {
                 "site_url": url,
@@ -806,6 +887,7 @@ def main():
                 "avg_position": m7["avg_position"],
                 "daily_rows": m7["daily_rows"],
                 "daily7": daily7,
+                "daily30": daily30,
                 "launch_date": meta_cache.get(short_name(url), {}).get("launch_date", ""),
                 "intro": meta_cache.get(short_name(url), {}).get("intro", ""),
                 "status": "OK",
@@ -825,6 +907,7 @@ def main():
                 "m30": {"clicks": 0, "impressions": 0, "ctr_pct": 0, "avg_position": 0, "daily_rows": 0},
                 "clicks": 0, "impressions": 0, "ctr_pct": 0, "avg_position": 0, "daily_rows": 0,
                 "daily7": [],
+                "daily30": [],
                 "status": f"ERROR: {err}",
                 "top_queries": [], "top_pages": [], "devices": [], "countries": [],
             })

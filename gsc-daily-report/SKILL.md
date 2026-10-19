@@ -35,7 +35,7 @@ description: 自动运行 GSC 站点效果统计脚本，拉取所有已授权 G
 
 报告输出目录由脚本内 `DATA_DIR` 配置（环境变量 `GSC_DATA_DIR` 可覆盖），默认为本 skill 目录下的 `gsc_reports/`：
 
-- `index.html`：**固定文件名，覆盖式**，单页 HTML 图表（每个站点一张近 7 天折线图，展示左轴紫色、点击右轴蓝色，双 Y 轴，风格同 GSC 官方图表），供线上访问。图表依赖 Google Charts CDN（`gstatic.com/charts/loader.js`），浏览器需联网打开。
+- `index.html`：**固定文件名，覆盖式**，单页 HTML 图表（每个站点一张折线图，展示左轴紫色、点击右轴蓝色，双 Y 轴，风格同 GSC 官方图表），供线上访问。**默认展示近 30 天趋势**，页面右上角提供「近30天 / 近7天」切换按钮，切换时同步刷新每张卡片的点击/展示/CTR/均位指标。图表依赖 Google Charts CDN（`gstatic.com/charts/loader.js`），浏览器需联网打开。
 - `report.xlsx`：**固定文件名，覆盖式**，多工作表 Excel（页面右上角「下载详细表格数据」按钮指向它），含 4 个工作表：
 
 | 工作表 | 内容 |
