@@ -19,7 +19,7 @@ description: >
 | profile | Cloudflare 账号 | 变量前缀 | 部署通道 |
 |---------|----------------|---------|---------|
 | `jiusongvip` | jiusongvip@gmail.com（旧） | `CF_JIUSONGVIP_*` | `git`（原生 Git 集成） |
-| `pinus9` | pinus9@outlook.com（新） | `CF_PINUS9_*` | `direct`（Direct Upload + Actions） |
+| `jiusongok` | jiusongok@hotmail.com（新） | `CF_JIUSONGOK_*` | `direct`（Direct Upload + Actions） |
 
 新增账号 = 在 `.env` 追加三行（同时补进 `CF_PROFILES`）：
 
@@ -30,7 +30,8 @@ CF_{PROFILE}_ACCOUNT_ID=xxxxxxxx
 CF_PROFILE_{PROFILE}_CHANNEL=git        # git | direct，决定 Step 5 走哪条通道
 ```
 
-> `CHANNEL` 缺省时的回退规则：profile 名为 `pinus9` → `direct`，其余 → `git`。
+> `CHANNEL` 缺省时的回退规则：profile 名（大写）为 `JIUSONGOK` → `direct`，其余 → `git`。
+> **键名必须全大写**：加载脚本用 `$PROFILE.ToUpper()` 拼接变量名，写成 `CF_jiusongok_API_TOKEN` 会静默读不到（表现为 token 为空、403）。
 
 **Token 必需权限（4 项，缺一不可）：**
 
@@ -47,7 +48,7 @@ CF_PROFILE_{PROFILE}_CHANNEL=git        # git | direct，决定 Step 5 走哪条
 
 ```powershell
 $ENV_FILE = "d:\workspaces\website\website-skill\cloudflare-deploy\.env"
-$PROFILE  = "pinus9"   # 用户选定的 profile（见 Step 0a）
+$PROFILE  = "jiusongok"   # 用户选定的 profile（见 Step 0a）
 
 Get-Content $ENV_FILE | ForEach-Object {
   if ($_ -match '^\s*([A-Z0-9_]+)\s*=\s*(.+)$') { Set-Item "env:$($matches[1])" $matches[2].Trim() }
@@ -63,7 +64,7 @@ $env:CLOUDFLARE_ACCOUNT_ID = [Environment]::GetEnvironmentVariable("CF_${p}_ACCO
 
 # 通道判定：git = 原生 Git 集成；direct = Direct Upload + GitHub Actions
 $env:CF_CHANNEL = [Environment]::GetEnvironmentVariable("CF_PROFILE_${p}_CHANNEL")
-if (-not $env:CF_CHANNEL) { $env:CF_CHANNEL = if ($p -eq 'PINUS9') { 'direct' } else { 'git' } }
+if (-not $env:CF_CHANNEL) { $env:CF_CHANNEL = if ($p -eq 'JIUSONGOK') { 'direct' } else { 'git' } }
 "通道：$env:CF_CHANNEL"
 ```
 
@@ -72,9 +73,11 @@ if (-not $env:CF_CHANNEL) { $env:CF_CHANNEL = if ($p -eq 'PINUS9') { 'direct' } 
 | 通道 | 适用账号 | 建项目方式 | push 后谁构建 |
 |------|---------|-----------|--------------|
 | `git` | `jiusongvip`（GitHub App 被它认领） | `POST /pages/projects` **带 `source`** | Cloudflare（webhook） |
-| `direct` | `pinus9`（GitHub App 被占用，报 8000011） | `POST /pages/projects` **不带 `source`** | GitHub Actions（`wrangler pages deploy`） |
+| `direct` | `jiusongok`（该账号的 GitHub App 属于 `jiusongok-bot`，`jiusongvip` 仓库报 8000011） | `POST /pages/projects` **不带 `source`** | GitHub Actions（`wrangler pages deploy`） |
 
 > **不要试图给 `direct` 账号补 GitHub App 授权** —— 一份 installation 只能被一个 Cloudflare 账号认领。实测 Configure 里点 Save、无痕窗口重授权、`+ Add account`、切 `All repositories` 全都绕不过 `8000011`，详见附录第 2 条。
+>
+> 实测补充：`jiusongok` 账号已有自己的 installation，归属 GitHub 账号 **`jiusongok-bot`**（`solar-fan-hat`、`astro-facialcupping` 就是它名下的 git 集成项目）。所以若仓库能建在 `jiusongok-bot` 名下，可直接走 `git` 通道；只要仓库在 `jiusongvip` 名下，就只能走 `direct`。
 
 ---
 
@@ -98,14 +101,14 @@ if (-not $env:CF_CHANNEL) { $env:CF_CHANNEL = if ($p -eq 'PINUS9') { 'direct' } 
 ```
 这次部署到哪个 Cloudflare 账号？
 1) jiusongvip — jiusongvip@gmail.com（Account …592be，git 通道：原生 Git 集成）
-2) pinus9     — pinus9@outlook.com（Account …9b3，direct 通道：Direct Upload + Actions）
+2) jiusongok  — jiusongok@hotmail.com（Account …d9c9，direct 通道：Direct Upload + Actions）
 ```
 
 用户选定后执行「核心配置 → 加载账号档案」，再确认只读校验返回 `True`。
 
 > 不同账号的 token / account_id **不可混用**，混用表现为 `success=false`、403 或 `Authentication error`。
 > 若该账号是首次部署，先完成「附录：新 Cloudflare 账号首次接入」，否则 Step 5 的 API 一定失败。
-> 后续每个 API 调用回显时都带上账号标识（如 `pinus9`），避免串号。
+> 后续每个 API 调用回显时都带上账号标识（如 `jiusongok`），避免串号。
 
 #### 0b. 获取代码
 
@@ -543,7 +546,7 @@ foreach ($f in $files) {
 
 ## 附录：新 Cloudflare 账号首次接入
 
-新账号（如 `pinus9`）第一次部署前按下表准备；**第 2 项仅 `git` 通道需要**，`direct` 通道直接跳过。
+新账号（如 `jiusongok`）第一次部署前按下表准备；**第 2 项仅 `git` 通道需要**，`direct` 通道直接跳过。
 
 1. **建 Token** —— 4 项权限 + `Account Resources` + `Zone Resources` 都设值（见「核心配置」）。
 2. **授权 GitHub App —— 仅 `git` 通道需要**
@@ -594,7 +597,7 @@ foreach ($f in $files) {
 
 | 参数 | 来源 | 示例 |
 |------|------|------|
-| `{PROFILE}` | 用户选定（Step 0a） | `pinus9` |
+| `{PROFILE}` | 用户选定（Step 0a） | `jiusongok` |
 | `{CHANNEL}` | `.env` 的 `CF_PROFILE_{PROFILE}_CHANNEL` | `git` / `direct` |
 | `{USER}` | 仓库 URL | `jiusongvip` |
 | `{REPO}` | 仓库 URL | `best-of-chengdu` |
