@@ -4,8 +4,9 @@ description: >
   Cloudflare Pages 部署技能。输入一个 GitHub 仓库 URL 即可完成部署，
   覆盖代码拉取、配置自动修复、本地构建、推送、API 创建 Git 连接项目、
   触发部署、验证全流程。支持多 Cloudflare 账号档案（部署前必须询问
-  目标账号，凭证见 .env）。覆盖常见坑点：构建命令、API Token 权限、
-  GitHub 推送代理、sitemap 验证、合并冲突处理。
+  目标账号，凭证见 .env）。域名注册商为 Spaceship 时，可通过 API 代改 NS
+  指向 Cloudflare，无需用户手点面板。覆盖常见坑点：构建命令、API Token
+  权限、GitHub 推送代理、sitemap 验证、合并冲突处理。
   部署通道按账号自动分叉：旧账号走原生 Git 集成；新账号因 GitHub App
   已被旧账号认领（报 8000011）改走 Direct Upload + GitHub Actions。
 ---
@@ -33,6 +34,25 @@ CF_PROFILE_{PROFILE}_CHANNEL=git        # git | direct，决定 Step 5 走哪条
 > `CHANNEL` 缺省时的回退规则：profile 名（大写）为 `JIUSONGOK` → `direct`，其余 → `git`。
 > **键名必须全大写**：加载脚本用 `$PROFILE.ToUpper()` 拼接变量名，写成 `CF_jiusongok_API_TOKEN` 会静默读不到（表现为 token 为空、403）。
 
+**GitHub 令牌（仅 `direct` 通道需要，写在同一个 `.env`）：**
+
+| 变量 | 用途 | 必需权限 |
+|------|------|---------|
+| `GITHUB_PAT_JIUSONGVIP` | 往目标仓库写 Actions Secrets（见 Step 5B 第 3 步）。classic 令牌，个人仓库与 `jiusongai` 组织仓库都能写 | `repo` scope（一个即够，含 Secrets 写入与 Actions 端点） |
+
+> 该 token 不参与构建与部署，只在写 Secrets 那一步用一次；仓库级别的 Secrets 写好后就不再需要它。
+> 它不是 GitHub App installation，不影响 `git` / `direct` 通道的判定。
+
+**Spaceship 令牌（仅注册商是 Spaceship 且要代改 NS 时需要，见 Step 9a）：**
+
+| 变量 | 用途 | 必需权限 |
+|------|------|---------|
+| `SPACESHIP_API_KEY` | 调 `spaceship.dev/api/v1`，读写域名 NS | `domains:write`（最小集；Full access 也可用） |
+| `SPACESHIP_API_SECRET` | 同上，与 key 成对使用 | 同上 |
+
+> 它只影响「域名 NS 指向 Cloudflare」这一步，与 Cloudflare token、GitHub PAT 完全独立。
+> 注册商不是 Spaceship（Cloudflare Registrar / GoDaddy / Namecheap 等）时，本项留空，Step 9a 走手动指引。
+
 **Token 必需权限（4 项，缺一不可）：**
 
 | 权限 | 级别 | 用途 |
@@ -58,6 +78,9 @@ $env:CLOUDFLARE_API_TOKEN  = [Environment]::GetEnvironmentVariable("CF_${p}_API_
 $env:CLOUDFLARE_ACCOUNT_ID = [Environment]::GetEnvironmentVariable("CF_${p}_ACCOUNT_ID")
 
 "账号：$([Environment]::GetEnvironmentVariable("CF_PROFILE_${p}_LABEL")) / $env:CLOUDFLARE_ACCOUNT_ID"
+
+# 注册商令牌（Step 9a 用），上面的循环已载入；未配置时空字符串
+"Spaceship：$(if ($env:SPACESHIP_API_KEY) { '已加载，可代改 NS' } else { '未配置，Step 9a 需手动' })"
 
 # 只读校验，期望 True；False 或 403 = token 与 Account ID 跨账号混用
 (Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts/$env:CLOUDFLARE_ACCOUNT_ID/pages/projects?per_page=1" -Headers @{Authorization="Bearer $env:CLOUDFLARE_API_TOKEN"}).success
@@ -287,15 +310,27 @@ jobs:
 > 纯静态项目（无构建步骤）删掉 `setup-node` / `npm` 三行，并把 `pages deploy dist` 改为 `pages deploy .`。
 > 仓库里已有 workflow 时只改 `--project-name`，不要重复建文件。
 
-**第 3 步：写入两条 Secrets（二选一）**
+**第 3 步：写入两条 Secrets（`direct` 通道必做）**
 
-| 方式 | 操作 |
-|------|------|
-| **推荐：让用户手动加** | 仓库 `Settings → Secrets and variables → Actions → New repository secret`：`CF_API_TOKEN`（`CF_{PROFILE}_API_TOKEN`）、`CF_ACCOUNT_ID`（`CF_{PROFILE}_ACCOUNT_ID`） |
-| 有 `Secrets: Read and write` 的 fine-grained PAT | 拉 public-key → libsodium sealed box 加密 → `PUT /repos/{USER}/{REPO}/actions/secrets/{NAME}`；明文只走环境变量，不落盘、不回显 |
+仓库没有 `CF_API_TOKEN` / `CF_ACCOUNT_ID` 时，Actions 前几步全部通过，只在最后 `wrangler-action` 报 `Input required and not supplied: apiToken`。两条路选一条：
 
-> 写入后 `GET /repos/{USER}/{REPO}/actions/secrets` 应返回 `total_count=2`。
-> 此处的 GitHub token 用完必须提醒用户 revoke。
+| 方式 | 操作 | 适用 |
+|------|------|------|
+| **A. 脚本写入（默认走这条）** | 用 `.env` 的 `GITHUB_PAT_JIUSONGVIP` 调 API 加密写入，步骤见下 | classic PAT 带 `repo` scope |
+| **B. 手动加** | 仓库 `Settings → Secrets and variables → Actions → New repository secret`：`CF_API_TOKEN`（`CF_{PROFILE}_API_TOKEN`）、`CF_ACCOUNT_ID`（`CF_{PROFILE}_ACCOUNT_ID`） | 没有 PAT 或权限不足 |
+
+**A 的具体做法（Windows PowerShell，无需 gh CLI）：**
+
+1. `GET /repos/{USER}/{REPO}/actions/secrets/public-key` 取 `key` 与 `key_id`，curl 必须带系统代理。
+2. sealed box 加密：PyNaCl `SealedBox(PublicKey(base64.b64decode(key))).encrypt(value.encode())` 后 base64；缺库时 `python -m pip install --quiet pynacl`（本机没有 libsodium-wrappers，不要为一次性任务给项目加依赖）。
+3. `PUT /repos/{USER}/{REPO}/actions/secrets/{NAME}`，body 为 `{"encrypted_value":"...","key_id":"..."}`；用 `Set-Content -Encoding ascii -NoNewline` 写 body 文件后 `curl --data-binary @file`，成功返回 201。
+4. 校验：`GET .../actions/secrets` 的 `total_count` 变成 2，两条 `updated_at` 是刚写入的时间。
+
+> 明文只走环境变量，不落盘、不回显；写完在交付说明里提醒用户 revoke 该 GitHub token。
+> classic PAT 带 `repo` scope 就能 `POST /actions/runs/{id}/rerun`（官方文档：该端点需要 `repo`）；只有 fine-grained PAT 需另开 `Actions: write`，否则 403 `Resource not accessible by personal access token`。不想重跑旧 run 时用 `git commit --allow-empty` + push 触发新的 run 来验证流水线。
+> 外层 shell 设置的变量有时传不进子 PowerShell 进程，脚本用 `param([string]$Pat)` 显式接收最稳。
+> 别用数组 splatting 给 `curl.exe` 拼多个 `-H`，会直接变成 `http=000`；逐条写 `-H "..."` 即可。
+> 验证部署真生效：`deployments?per_page=1` 最新一条的 `created_on` 要晚于这次 push，且 `environment=production`、`deployment_trigger.metadata.branch` 与推送分支一致。
 
 ### Step 6: 触发首次部署
 
@@ -426,11 +461,96 @@ curl -sI "https://{PROJECT_NAME}.pages.dev/sitemap-0.xml" | Select-String "HTTP"
 | 内页 title/H1 | ✅/❌ |
 ```
 
-### Step 9: 绑定自定义域名 + 裸域名跳 www + 替换硬编码域名
+### Step 9: 域名接入（NS → 绑定域名 → 301 跳 www → 替换硬编码）
 
-部署完成后，依次完成域名绑定、裸域名跳转、硬编码替换三步。
+部署完成后依次完成四步，**顺序不能调换**：
 
-#### 9a. API 绑定自定义域名（自动创建 CNAME）
+| 顺序 | 小节 | 跳过它会怎样 |
+|------|------|--------------|
+| 1 | **9a** 域名 NS 指向 Cloudflare（Spaceship 可 API 代改） | zone 停在 `pending`，已绑的自定义域名显示「停用（需要进行 DNS 设置）」 |
+| 2 | **9b** 绑定 www 自定义域名 + 自动 CNAME（**裸域不绑**） | 域名无记录，访问 522 |
+| 3 | **9c** 裸域名 301 → www | 两个域名各自 200，重复内容 |
+| 4 | **9d** 替换代码里的硬编码域名 | canonical / og:url / schema 指向旧域名 |
+
+#### 9a. 域名 NS 指向 Cloudflare（Spaceship 可 API 代改）
+
+> **注册商是 Spaceship 时，不需要用户去面板手点**：`SPACESHIP_API_KEY` / `SPACESHIP_API_SECRET` 已在 `.env`，按下面四步直接改。
+> 其它注册商（Cloudflare Registrar / GoDaddy / Namecheap…）无统一 API，只输出目标 NS 让用户去后台改。
+
+**第 1 步：Cloudflare 侧确认 zone 存在，拿到分配给它的一对 NS**
+
+```powershell
+$C = @{ Authorization = "Bearer $env:CLOUDFLARE_API_TOKEN" }
+$zone = (Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones?name={DOMAIN}" -Headers $C).result
+
+if (-not $zone) {
+  # 账号里还没有这个域名 → 先建 zone（不买额外服务，不导入旧 DNS）
+  $zone = (Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones" -Method POST `
+    -Headers $C -ContentType "application/json" `
+    -Body (@{ name = "{DOMAIN}"; account = @{ id = $env:CLOUDFLARE_ACCOUNT_ID } } | ConvertTo-Json)).result
+}
+
+$NS = $zone.name_servers          # 例：kayden.ns.cloudflare.com / tina.ns.cloudflare.com
+"zone=$($zone.id) status=$($zone.status)"
+"目标 NS：$($NS -join ', ')"
+```
+
+> NS 是**每个 zone 单独分配**的，不同域名不一样，必须以 `name_servers` 返回值为准，不要照抄模板里的域名。
+> `status` 已是 `active` = NS 早就切好了，**直接跳到 9b**，不要重复 PUT（会白白消耗限流额度）。
+
+**第 2 步：读注册商当前 NS（先确认这域名确实在该账号下）**
+
+```powershell
+$SP = @{ 'X-API-Key' = $env:SPACESHIP_API_KEY; 'X-API-Secret' = $env:SPACESHIP_API_SECRET }
+$list = Invoke-RestMethod -Uri "https://spaceship.dev/api/v1/domains?take=100&skip=0" -Headers $SP
+$me = $list.items | Where-Object { $_.name -eq "{DOMAIN}" }
+
+if (-not $me) { "❌ {DOMAIN} 不在这组 Spaceship 凭证的账号下，改 NS 需换对应账号的 key" }
+else { "当前：$($me.nameservers.provider) → $($me.nameservers.hosts -join ', ')" }
+```
+
+> Spaceship **没有** `GET /domains/{domain}/nameservers` 端点（请求返回 404），只能从域名列表的 `nameservers` 字段读。
+> `take` 必须 10-100，写成 `take=5` 会报 422。
+
+**第 3 步：写入新 NS**
+
+```powershell
+$body = @{ provider = "custom"; hosts = @($NS) } | ConvertTo-Json
+Invoke-RestMethod -Uri "https://spaceship.dev/api/v1/domains/{DOMAIN}/nameservers" `
+  -Method PUT -Headers $SP -ContentType "application/json" -Body $body
+# 成功回显：{"provider":"custom","hosts":["kayden.ns.cloudflare.com","tina..."]}
+```
+
+> `provider` 必须是 `custom`（写 `basic` 会回到 Spaceship 自己的 NS）。
+> **限流：同一域名 300 秒内最多 5 次**，重试前先 `Start-Sleep`。
+
+**第 4 步：轮询 zone 状态直到 `active`**
+
+```powershell
+for ($i = 0; $i -lt 40; $i++) {
+  $s = (Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones/$($zone.id)" -Headers $C).result.status
+  "$((Get-Date -Format HH:mm:ss)) status=$s"
+  if ($s -eq 'active') { break }
+  Start-Sleep 30
+}
+```
+
+> 官方说最长 24 小时，实测通常 1-15 分钟。`active` 后 Pages 自定义域会自动从「停用」变为「有效」。
+
+**第 5 步：验证（必须绕开本机 DNS 缓存）**
+
+```powershell
+nslookup -type=NS {DOMAIN} 1.1.1.1     # 应回 Cloudflare 那对 NS
+nslookup {DOMAIN} 8.8.8.8              # 应回 Cloudflare IP（104.x / 172.x）
+
+# 本机解析器常缓存旧 NS，导致 nslookup 直查为空或 NXDOMAIN；别当成没生效：
+curl.exe -sI --resolve www.{DOMAIN}:443:<上一步拿到的 Cloudflare IP> https://www.{DOMAIN}/ | Select-String HTTP
+```
+
+> **本机 DNS 旧缓存的典型症状**：`nslookup {DOMAIN} 8.8.8.8` 正常，但不带 `-Server` 的查询返回空、`curl` 直接报 `000`。
+> 判定为单机问题，不要回头重建 zone 或重复改 NS；验证一律带 `--resolve` 或公共 DNS。
+
+#### 9b. API 绑定 www 自定义域名（自动创建 CNAME，裸域**不绑**）
 
 Token 需同时具备 `Pages:Edit` + `Zone DNS:Edit` 权限，绑定时 Cloudflare 会自动创建 CNAME 记录指向 `{PROJECT_NAME}.pages.dev`。
 
@@ -440,8 +560,8 @@ Token 需同时具备 `Pages:Edit` + `Zone DNS:Edit` 权限，绑定时 Cloudfla
 $env:TOKEN = $env:CLOUDFLARE_API_TOKEN
 $env:AID = $env:CLOUDFLARE_ACCOUNT_ID
 
-# 同时绑定裸域名 + www 子域
-foreach ($d in @("example.com", "www.example.com")) {
+# 只绑 www。裸域一律不加到 Pages 项目，直接由 9c 的 301 规则处理
+foreach ($d in @("www.example.com")) {
   $body = @{ name = $d } | ConvertTo-Json
   $r = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts/$env:AID/pages/projects/{PROJECT_NAME}/domains" `
     -Method POST -Headers @{Authorization="Bearer $env:TOKEN"} -ContentType "application/json" -Body $body
@@ -451,7 +571,22 @@ foreach ($d in @("example.com", "www.example.com")) {
 
 > 若返回 `already added`（code 8000018），说明该域名已绑定过，跳过即可。
 
-#### 9b. 裸域名 301 跳转 www（Dynamic URL Redirects）
+**为什么裸域不绑（重要）**
+
+把裸域同时加到 Pages 项目，会与 9c 的 301 规则直接冲突：Cloudflare 边缘收到 `http.host eq "{DOMAIN}"` 的请求就 301 走了，Pages 的域名激活探测拿不到它要的响应，于是面板上一直显示「正在验证」（`GET .../domains` 里 `status=pending`，而 `verification_data.status` 却是 `active`）。
+
+它**不影响访问**（裸域照常 301、www 照常 200），只是一个永不消失的假告警。正确做法：
+
+```powershell
+# 已经误绑了裸域 → 直接摘掉；DNS 记录和 301 规则都不会被动
+Invoke-RestMethod `
+  -Uri "https://api.cloudflare.com/client/v4/accounts/$env:AID/pages/projects/{PROJECT_NAME}/domains/{DOMAIN}" `
+  -Method DELETE -Headers @{Authorization="Bearer $env:TOKEN"}
+```
+
+> 裸域需要的 CNAME（或 A）记录 **保留不动**：它只负责把请求引到 Cloudflare 边缘，摘绑后 301 照旧生效。
+
+#### 9c. 裸域名 301 跳转 www（Dynamic URL Redirects）
 
 Token 需 `Zone → Dynamic URL Redirects → Edit` 权限。通过 Rulesets API 在 `http_request_dynamic_redirect` 阶段创建/更新重定向规则。
 
@@ -493,7 +628,7 @@ Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones/$zid/rulesets
 
 > 若该 zone 已在 Dashboard 配置过「Redirect from root to WWW」模板，无需重复创建。
 
-#### 9c. 替换硬编码域名
+#### 9d. 替换硬编码域名
 
 用户最终域名（如 `chinese-tea.com` → `chin-tea.com`，或裸域名 → `www.` 前缀）确定后，代码中硬编码的旧域名必须全量替换，否则 canonical、og:url、schema、邮箱会指向旧域名。
 
@@ -554,7 +689,7 @@ foreach ($f in $files) {
    - `direct` 通道（新账号）：**不需要也无法授权**。一份 installation 在同一时间只能被一个 Cloudflare 账号认领，新账号引用会报 `8000011 There is an internal issue with your Cloudflare Pages Git installation`。
    - 已实测无效的 4 种绕法：Configure 里不改直接点 Save、无痕窗口先登出 GitHub 再授权、`+ Add account`、切到 `All repositories`（该项只控制仓库范围，不改变归属）。
    - 硬结论：既要在第二个 CF 账号部署、又要保留原生 Git 集成 → 只能换/加一个 GitHub 账号；否则一律走 `direct` 通道。
-3. **确认 zone** —— `GET /zones` 若返回 0 条，说明该账号还没有域名：只能先跑 `xxx.pages.dev`，自定义域名必须先把域名迁入该账号。
+3. **确认 zone** —— `GET /zones` 若返回 0 条，说明该账号还没有域名：先走 **Step 9a** 建 zone 并到注册商切 NS（Spaceship 可直接 API 代改），或临时先跑 `xxx.pages.dev`。
 4. **回报账号** —— 部署小结里写明 profile + Account ID 后 4 位。
 
 > 过渡期两账号并行：push 只触发「已绑定该仓库」的项目，不同仓库互不影响；若两个账号绑了同一个仓库，才会出现双份构建。
@@ -580,9 +715,10 @@ foreach ($f in $files) {
 | API 建项目报 `8000011` | 该 CF 账号未持有 GitHub App installation（一份安装只能被一个账号认领） | 改走 `direct` 通道建 Direct Upload 项目，**不要卸载重装** |
 | 项目列表显示「无 Git 连接」、push 后不构建 | Direct Upload 项目与仓库无任何关联 | 必须配 Actions workflow；否则只能手动 `wrangler pages deploy` |
 | Direct Upload 项目想改回 Git 集成 | 官方限制：项目类型创建后不可切换 | 删除项目，重建为 Git 集成项目 |
-| Actions 报 `Input required and not supplied: apiToken` | 仓库缺 `CF_API_TOKEN` / `CF_ACCOUNT_ID` | 补 Secret 后 Re-run |
+| Actions 报 `Input required and not supplied: apiToken` | 仓库缺 `CF_API_TOKEN` / `CF_ACCOUNT_ID` | 按 Step 5B 第 3 步写两条 Secret 后 Re-run |
 | Actions 报 403 / `Authentication error` | Secret 里的 token 与 Account ID 不是同一账号 | 重新写入同一 profile 的两个值 |
-| 写 Secret 报 403 `Resource not accessible by personal access token` | fine-grained PAT 缺 `Repository permissions → Secrets: Read and write` | token 设置里补该项（注意：`Secret scanning push protection bypass requests` 不是它） |
+| Re-run 报 403 `Resource not accessible by personal access token` | 所用 GitHub PAT 是 fine-grained 且没开 `Actions: write` | 换用带 `repo` scope 的 classic PAT，或改用 `git commit --allow-empty` + push 触发新 run |
+| 写 Secret 报 403 `Resource not accessible by personal access token` | fine-grained PAT 缺 `Repository permissions → Secrets: Read and write`；classic PAT 缺 `repo` scope | classic 勾 `repo` 即可；fine-grained 补 Secrets 读写（注意：`Secret scanning push protection bypass requests` 不是它） |
 | API 创建项目成功但无部署 | webhook 未触发 | 执行 `git commit --allow-empty` + push 触发首次构建 |
 | API 创建项目报项目已存在 | 项目之前创建过 | 改为查询项目状态，直接 push 触发重新部署 |
 | sitemap 返回 522 | 部署后缓存未就绪 | 等 10 秒重试，正常现象 |
@@ -590,6 +726,14 @@ foreach ($f in $files) {
 | 重定向规则创建报权限错误 | Token 缺 Dynamic URL Redirects 权限 | Token 加 `Zone → Dynamic URL Redirects → Edit` |
 | 绑定域名报 `already added`（8000018） | 域名已绑定过 | 跳过，无需处理 |
 | sitemap 显示"无法抓取" | Google 还没处理 | 正常现象，等几分钟刷新 |
+| Spaceship 改 NS 报 422 | 分页参数越界（`take` 必须在 10-100） | 读列表改 `?take=100&skip=0` |
+| Spaceship 改 NS 报 404 | 域名不在该组 API key 的账号下，或请求了不存在的 `GET .../nameservers` | 用 `GET /api/v1/domains?take=100` 核对域名；读 NS 只能走该列表的 `nameservers` 字段 |
+| Spaceship 改 NS 报 429 | 限流（同一域名 300 秒内最多 5 次） | `Start-Sleep 300` 后再试，不要循环重试 |
+| Spaceship 改完 NS，zone 长期 `pending` | NS 未真正生效（`provider` 写成 `basic`、值没用 `name_servers` 原值、域名锁未释放） | 回读列表确认 `nameservers.provider=custom`，`nslookup -type=NS {DOMAIN} 1.1.1.1` 对着看 |
+| Pages 自定义域显示「停用（需要进行 DNS 设置）」 | 顺序反了：先绑了域名，zone 的 NS 还没切过来 | 先做 9a 切 NS，zone `active` 后该状态会自动消失，不必删重建 |
+| 本机访问域名失败、`curl` 直接 000，但公网 DNS 正常 | 路由器/DNS 缓存了注册商旧 NS | 公共 DNS 验证 + `curl --resolve`；属单机问题，用 `ipconfig /flushdns` 或改 DNS 为 1.1.1.1 |
+| Pages 自定义域里裸域一直「正在验证」、www 已「活动」 | 裸域被同时绑到 Pages，而 9c 的 301 规则把该 host 的请求全跳走了，Pages 激活探测永远拿不到响应 | `DELETE .../pages/projects/{项目}/domains/{裸域}` 摘掉即可，DNS 与 301 不受影响（见 9b） |
+| 裸域被摘绑后担心失访 | 误以为 301 靠 Pages 绑定 | 301 靠的是「zone 内有 DNS 记录 + redirect 规则」，与 Pages 绑定无关；摘绑后实测仍 301 |
 
 ---
 
@@ -604,6 +748,7 @@ foreach ($f in $files) {
 | `{PROJECT_NAME}` | = 仓库名 | `best-of-chengdu` |
 | `{BRANCH}` | `git branch -a` 确认 | `master` 或 `main` |
 | `{PROJECT_DIR}` | `d:\workspaces\website\{REPO}` | `d:\workspaces\website\best-of-chengdu` |
+| `{DOMAIN}` | 用户提供的正式域名（Step 9a 用） | `surrogacybase.com` |
 
 ---
 
@@ -663,4 +808,24 @@ curl -s -X DELETE "https://api.cloudflare.com/client/v4/accounts/$AID/pages/proj
 # 查看域名列表
 curl -s "https://api.cloudflare.com/client/v4/zones?name=$DOMAIN" \
   -H "Authorization: Bearer $TOKEN"
+
+# 建 zone（账号里还没这个域名时；返回的 name_servers 就是要填到注册商的那对 NS）
+curl -s -X POST "https://api.cloudflare.com/client/v4/zones" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"DOMAIN","account":{"id":"AID"}}'
+
+# zone 状态（pending / active）
+curl -s "https://api.cloudflare.com/client/v4/zones/$ZID" \
+  -H "Authorization: Bearer $TOKEN"
+
+# === Spaceship（改 NS，Step 9a）===
+# 列表 + 当前 NS（take 必须 10-100）
+curl -s "https://spaceship.dev/api/v1/domains?take=100&skip=0" \
+  -H "X-API-Key: $SPACESHIP_KEY" -H "X-API-Secret: $SPACESHIP_SECRET"
+
+# 写入 NS
+curl -s -X PUT "https://spaceship.dev/api/v1/domains/DOMAIN/nameservers" \
+  -H "X-API-Key: $SPACESHIP_KEY" -H "X-API-Secret: $SPACESHIP_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"custom","hosts":["kayden.ns.cloudflare.com","tina.ns.cloudflare.com"]}'
 ```
