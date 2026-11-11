@@ -19,18 +19,19 @@ description: >
 
 | profile | Cloudflare 账号 | 变量前缀 | 部署通道 |
 |---------|----------------|---------|---------|
-| `jiusongvip` | jiusongvip@gmail.com（旧） | `CF_JIUSONGVIP_*` | `git`（原生 Git 集成） |
+| `jiusongvip` | pinus9@outlook.com（旧） | `CF_JIUSONGVIP_*` | `git`（原生 Git 集成） |
 | `jiusongok` | jiusongok@hotmail.com（新） | `CF_JIUSONGOK_*` | `direct`（Direct Upload + Actions） |
 
 新增账号 = 在 `.env` 追加三行（同时补进 `CF_PROFILES`）：
 
 ```bash
-CF_PROFILE_{PROFILE}_LABEL=<账号邮箱>
+CF_PROFILE_{PROFILE}_LABEL=<Cloudflare 账号名称>
 CF_{PROFILE}_API_TOKEN=cfat_xxx
 CF_{PROFILE}_ACCOUNT_ID=xxxxxxxx
 CF_PROFILE_{PROFILE}_CHANNEL=git        # git | direct，决定 Step 5 走哪条通道
 ```
 
+> `LABEL` 填 Cloudflare 后台的**账号名称**，与登录邮箱可以不同：`jiusongvip` 这个 profile 对应账号名称现为 `pinus9@outlook.com`。profile 键名（含 `CF_JIUSONGVIP_*` 变量前缀）是内部标识，**不随账号改名而变**。
 > `CHANNEL` 缺省时的回退规则：profile 名（大写）为 `JIUSONGOK` → `direct`，其余 → `git`。
 > **键名必须全大写**：加载脚本用 `$PROFILE.ToUpper()` 拼接变量名，写成 `CF_jiusongok_API_TOKEN` 会静默读不到（表现为 token 为空、403）。
 
@@ -119,11 +120,11 @@ if (-not $env:CF_CHANNEL) { $env:CF_CHANNEL = if ($p -eq 'JIUSONGOK') { 'direct'
 
 **禁止使用任何“默认”账号，也禁止猜测。** 每次部署前向用户提问，选项从 `.env` 的 `CF_PROFILES` 实际读取。
 
-提问必须带**邮箱**（邮箱才是用户判断部署位置的真实标识，缩写仅作内部键名）：
+提问必须带**账号名称**（Cloudflare 后台的账号名称才是用户判断部署位置的真实标识，profile 缩写仅作内部键名）：
 
 ```
 这次部署到哪个 Cloudflare 账号？
-1) jiusongvip — jiusongvip@gmail.com（Account …592be，git 通道：原生 Git 集成）
+1) jiusongvip — pinus9@outlook.com（Account …592be，git 通道：原生 Git 集成）
 2) jiusongok  — jiusongok@hotmail.com（Account …d9c9，direct 通道：Direct Upload + Actions）
 ```
 
